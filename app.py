@@ -266,7 +266,7 @@ else:
         default_sheet = wb.active
         wb.remove(default_sheet)
 
-        font_title = Font(name="Calibri", size=12, bold=True)
+        font_title = Font(name="Calibri", size=11, bold=True)
         font_bold = Font(name="Calibri", size=11, bold=True)
         fill_header = PatternFill(
             start_color="D9D9D9", end_color="D9D9D9", fill_type="solid"
@@ -283,16 +283,18 @@ else:
           safe_sheet_name = re.sub(r"[\\/?:*\[\]]", "-", str(kelas))[:31]
           ws = wb.create_sheet(title=safe_sheet_name)
 
-          ws["A1"] = "MATA PELAJARAN:"
-          ws["B1"] = pilih_mapel
+          # Header Info dengan Merged Cells agar tidak terpotong dan elegan
+          ws.merge_cells("A1:C1")
+          ws["A1"] = f"MATA PELAJARAN : {pilih_mapel}"
           ws["A1"].font = font_title
-          ws["B1"].font = font_title
+          ws["A1"].alignment = Alignment(horizontal="left", vertical="center")
 
-          ws["A2"] = "KELAS:"
-          ws["B2"] = kelas
+          ws.merge_cells("A2:C2")
+          ws["A2"] = f"KELAS : {kelas}"
           ws["A2"].font = font_title
-          ws["B2"].font = font_title
+          ws["A2"].alignment = Alignment(horizontal="left", vertical="center")
 
+          # Tabel Header di Baris 4
           headers = ["NO", "NAMA", "NILAI PG"]
           for col_num, h_title in enumerate(headers, 1):
             cell = ws.cell(row=4, column=col_num, value=h_title)
@@ -301,14 +303,17 @@ else:
             cell.alignment = Alignment(horizontal="center", vertical="center")
             cell.border = thin_border
 
-          query_siswa = f"SELECT nis, nama FROM master_siswa WHERE kelas = '{kelas}'"
-          df_m_kelas = pd.read_sql(query_siswa, conn)
-
-          query_nilai = (
-              f"SELECT nis, poin FROM hasil_ujian WHERE nama_tes ="
-              f" '{pilih_mapel}'"
+          # Ambil data dari database dengan aman
+          df_m_kelas = pd.read_sql(
+              "SELECT nis, nama FROM master_siswa WHERE kelas = ?",
+              conn,
+              params=(kelas,),
           )
-          df_n_mapel = pd.read_sql(query_nilai, conn)
+          df_n_mapel = pd.read_sql(
+              "SELECT nis, poin FROM hasil_ujian WHERE nama_tes = ?",
+              conn,
+              params=(pilih_mapel,),
+          )
 
           dict_nilai = dict(
               zip(df_n_mapel["nis"].astype(str), df_n_mapel["poin"])
@@ -324,16 +329,18 @@ else:
             c_nama = ws.cell(row=row_num, column=2, value=nama_siswa)
             c_nilai = ws.cell(row=row_num, column=3, value=nilai_pg)
 
-            c_no.alignment = Alignment(horizontal="center")
-            c_nilai.alignment = Alignment(horizontal="center")
+            c_no.alignment = Alignment(horizontal="center", vertical="center")
+            c_nama.alignment = Alignment(horizontal="left", vertical="center")
+            c_nilai.alignment = Alignment(horizontal="center", vertical="center")
 
             c_no.border = thin_border
             c_nama.border = thin_border
             c_nilai.border = thin_border
 
-          ws.column_dimensions["A"].width = 6
-          ws.column_dimensions["B"].width = 35
-          ws.column_dimensions["C"].width = 15
+          # Pengaturan lebar kolom proporsional agar enak dipandang
+          ws.column_dimensions["A"].width = 8
+          ws.column_dimensions["B"].width = 38
+          ws.column_dimensions["C"].width = 16
 
         wb.save(output)
         output.seek(0)
@@ -362,15 +369,15 @@ else:
           key="cek_mapel",
       )
 
-      query_belum = f"""
+      query_belum = """
             SELECT m.kelas, m.nis, m.nama 
             FROM master_siswa m
             WHERE m.nis NOT IN (
-                SELECT h.nis FROM hasil_ujian h WHERE h.nama_tes = '{pilih_mapel}'
+                SELECT h.nis FROM hasil_ujian h WHERE h.nama_tes = ?
             )
             ORDER BY m.kelas, m.nama
         """
-      df_belum = pd.read_sql(query_belum, conn)
+      df_belum = pd.read_sql(query_belum, conn, params=(pilih_mapel,))
 
       if df_belum.empty:
         st.info("Hebat! Semua siswa sudah mengikuti ujian untuk mata pelajaran ini.")
