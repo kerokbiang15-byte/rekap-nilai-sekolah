@@ -74,7 +74,7 @@ else:
     st.session_state.role = None
     st.rerun()
 
-  st.title("📚 Aplikasi Rekap Nilai Ujian & Pelacak Siswa")
+  st.title("📚 Aplikasi Rekap Nilai Ujian")
   st.markdown("---")
 
   # Atur menu berdasarkan role
