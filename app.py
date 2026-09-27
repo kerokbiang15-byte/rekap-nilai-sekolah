@@ -33,7 +33,7 @@ def init_db():
 
 conn = init_db()
 
-st.set_page_config(page_title="Aplikasi Rekap Nilai Ujian", layout="wide")
+st.set_page_config(page_title="APLIKASI REKAP NILAI UJIAN", layout="wide")
 
 # --- KELOLA SESI LOGIN ---
 if "logged_in" not in st.session_state:
@@ -74,7 +74,7 @@ else:
     st.session_state.role = None
     st.rerun()
 
-  st.title("📚 Aplikasi Rekap Nilai Ujian")
+  st.title("APLIKASI REKAP NILAI UJIAN")
   st.markdown("---")
 
   # Atur menu berdasarkan role
@@ -88,7 +88,6 @@ else:
         ],
     )
   else:
-    # Guru tidak bisa akses menu operator (hapus/upload)
     menu = st.sidebar.selectbox(
         "Pilih Menu:",
         ["2. Guru: Download Rekap Nilai", "3. Cek Siswa Belum Ujian"],
@@ -106,7 +105,10 @@ else:
 
     with tab_up1:
       st.subheader("1. Upload Data Master Siswa (Excel/CSV)")
-      st.markdown("Format kolom wajib: `NIS`, `Nama`, `Kelas`")
+      st.markdown(
+          "Pastikan file Excel/CSV memiliki kolom untuk **NIS**, **Nama**, dan"
+          " **Kelas**."
+      )
       file_master = st.file_uploader(
           "Pilih file Master Siswa", type=["xlsx", "csv"], key="master"
       )
@@ -116,23 +118,41 @@ else:
         else:
           df_m = pd.read_excel(file_master)
 
-        st.write("Pratinjau Data Master:", df_m.head())
-        if st.button("Simpan Master Siswa ke Database"):
-          cursor = conn.cursor()
-          for _, row in df_m.iterrows():
-            cursor.execute(
-                "INSERT OR REPLACE INTO master_siswa (nis, nama, kelas) VALUES"
-                " (?, ?, ?)",
-                (str(row["NIS"]), str(row["Nama"]), str(row["Kelas"])),
-            )
-          conn.commit()
-          st.success("Data Master Siswa berhasil disimpan ke database!")
+        # Bersihkan nama kolom dari spasi ekstra
+        df_m.columns = [str(col).strip() for col in df_m.columns]
+        col_map = {c.lower(): c for c in df_m.columns}
+
+        nis_col = col_map.get("nis") or col_map.get("no induk")
+        nama_col = col_map.get("nama") or col_map.get("nama lengkap")
+        kelas_col = col_map.get("kelas") or col_map.get("group")
+
+        if not nis_col or not nama_col or not kelas_col:
+          st.error(
+              "Kolom tidak lengkap! Kolom terbaca di file Anda:"
+              f" {list(df_m.columns)}. Pastikan ada kolom NIS, Nama, dan Kelas."
+          )
+        else:
+          st.write("Pratinjau Data Master:", df_m.head())
+          if st.button("Simpan Master Siswa ke Database"):
+            cursor = conn.cursor()
+            for _, row in df_m.iterrows():
+              cursor.execute(
+                  "INSERT OR REPLACE INTO master_siswa (nis, nama, kelas)"
+                  " VALUES (?, ?, ?)",
+                  (
+                      str(row[nis_col]),
+                      str(row[nama_col]),
+                      str(row[kelas_col]),
+                  ),
+              )
+            conn.commit()
+            st.success("Data Master Siswa berhasil disimpan ke database!")
 
     with tab_up2:
       st.subheader("2. Upload Hasil Ujian Mentah dari CBT")
       st.markdown(
-          "Format kolom dari CBT: `Nama Tes`, `Username` (sebagai NIS), `Nama`,"
-          " `Group` (Kelas), `Poin`"
+          "Format standar CBT: `Nama Tes`, `Username` (NIS), `Nama`, `Group`"
+          " (Kelas), `Poin`"
       )
       file_ujian = st.file_uploader(
           "Pilih file Hasil Ujian", type=["xlsx", "csv"], key="ujian"
@@ -143,23 +163,38 @@ else:
         else:
           df_u = pd.read_excel(file_ujian)
 
-        st.write("Pratinjau Data Ujian:", df_u.head())
-        if st.button("Simpan Hasil Ujian ke Database"):
-          cursor = conn.cursor()
-          for _, row in df_u.iterrows():
-            cursor.execute(
-                "INSERT INTO hasil_ujian (nama_tes, nis, nama, kelas, poin)"
-                " VALUES (?, ?, ?, ?, ?)",
-                (
-                    str(row["Nama Tes"]),
-                    str(row["Username"]),
-                    str(row["Nama"]),
-                    str(row["Group"]),
-                    float(row["Poin"]),
-                ),
-            )
-          conn.commit()
-          st.success("Data Hasil Ujian berhasil di-upload dan masuk database!")
+        df_u.columns = [str(col).strip() for col in df_u.columns]
+        col_map_u = {c.lower(): c for c in df_u.columns}
+
+        tes_c = col_map_u.get("nama tes") or col_map_u.get("namates")
+        nis_c = col_map_u.get("username") or col_map_u.get("nis")
+        nama_c = col_map_u.get("nama")
+        kelas_c = col_map_u.get("group") or col_map_u.get("kelas")
+        poin_c = col_map_u.get("poin") or col_map_u.get("nilai")
+
+        if not tes_c or not nis_c or not nama_c or not kelas_c or not poin_c:
+          st.error(
+              "Kolom file ujian tidak sesuai! Kolom terbaca:"
+              f" {list(df_u.columns)}"
+          )
+        else:
+          st.write("Pratinjau Data Ujian:", df_u.head())
+          if st.button("Simpan Hasil Ujian ke Database"):
+            cursor = conn.cursor()
+            for _, row in df_u.iterrows():
+              cursor.execute(
+                  "INSERT INTO hasil_ujian (nama_tes, nis, nama, kelas, poin)"
+                  " VALUES (?, ?, ?, ?, ?)",
+                  (
+                      str(row[tes_c]),
+                      str(row[nis_c]),
+                      str(row[nama_c]),
+                      str(row[kelas_c]),
+                      float(row[poin_c]),
+                  ),
+              )
+            conn.commit()
+            st.success("Data Hasil Ujian berhasil di-upload dan masuk database!")
 
     with tab_up3:
       st.subheader("3. Kelola & Hapus Data di Database")
