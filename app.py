@@ -1,4 +1,5 @@
 import io
+import re
 import openpyxl
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 import pandas as pd
@@ -118,7 +119,6 @@ else:
         else:
           df_m = pd.read_excel(file_master)
 
-        # Bersihkan nama kolom dari spasi ekstra
         df_m.columns = [str(col).strip() for col in df_m.columns]
         col_map = {c.lower(): c for c in df_m.columns}
 
@@ -279,7 +279,9 @@ else:
         )
 
         for kelas in pilih_kelas:
-          ws = wb.create_sheet(title=str(kelas))
+          # Bersihkan nama kelas dari karakter ilegal Excel (\ / ? * : [ ])
+          safe_sheet_name = re.sub(r"[\\/?:*\[\]]", "-", str(kelas))[:31]
+          ws = wb.create_sheet(title=safe_sheet_name)
 
           ws["A1"] = "MATA PELAJARAN:"
           ws["B1"] = pilih_mapel
