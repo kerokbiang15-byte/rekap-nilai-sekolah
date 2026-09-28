@@ -307,9 +307,9 @@ else:
           st.warning("Semua data remedial dikosongkan!")
           st.rerun()
 
-  # --- MENU 2: GURU DOWNLOAD REKAP ---
+  # --- MENU 2: GURU PREVIEW & DOWNLOAD REKAP ---
   elif menu == "2. Guru: Download Rekap Nilai":
-    st.header("Dashboard Guru: Download Rekap Nilai Per Kelas")
+    st.header("Dashboard Guru: Pratinjau & Download Rekap Nilai Per Kelas")
 
     df_mapel = pd.read_sql("SELECT DISTINCT nama_tes FROM hasil_ujian", conn)
     df_kelas = pd.read_sql("SELECT DISTINCT kelas FROM master_siswa", conn)
@@ -330,46 +330,14 @@ else:
           list_kelas_tersedia,
       )
 
-      if st.button("Generate & Download Excel (Multi-Sheet)") and pilih_kelas:
-        output = io.BytesIO()
-        wb = openpyxl.Workbook()
-        default_sheet = wb.active
-        wb.remove(default_sheet)
+      if pilih_kelas:
+        st.markdown("---")
+        st.subheader("👀 Pratinjau (Preview) Data Nilai")
 
-        font_title = Font(name="Calibri", size=11, bold=True)
-        font_bold = Font(name="Calibri", size=11, bold=True)
-        fill_header = PatternFill(
-            start_color="D9D9D9", end_color="D9D9D9", fill_type="solid"
-        )
-        thin_border = Border(
-            left=Side(style="thin", color="000000"),
-            right=Side(style="thin", color="000000"),
-            top=Side(style="thin", color="000000"),
-            bottom=Side(style="thin", color="000000"),
-        )
+        preview_data = {}
 
         for kelas in pilih_kelas:
-          safe_sheet_name = re.sub(r"[\\/?:*\[\]]", "-", str(kelas))[:31]
-          ws = wb.create_sheet(title=safe_sheet_name)
-
-          ws.merge_cells("A1:C1")
-          ws["A1"] = f"MATA PELAJARAN : {pilih_mapel}"
-          ws["A1"].font = font_title
-          ws["A1"].alignment = Alignment(horizontal="left", vertical="center")
-
-          ws.merge_cells("A2:C2")
-          ws["A2"] = f"KELAS : {kelas}"
-          ws["A2"].font = font_title
-          ws["A2"].alignment = Alignment(horizontal="left", vertical="center")
-
-          headers = ["NO", "NAMA", "NILAI PG"]
-          for col_num, h_title in enumerate(headers, 1):
-            cell = ws.cell(row=4, column=col_num, value=h_title)
-            cell.font = font_bold
-            cell.fill = fill_header
-            cell.alignment = Alignment(horizontal="center", vertical="center")
-            cell.border = thin_border
-
+          st.markdown(f"**Kelas: {kelas}**")
           df_m_kelas = pd.read_sql(
               "SELECT nis, nama FROM master_siswa WHERE kelas = ?",
               conn,
@@ -385,42 +353,100 @@ else:
               zip(df_n_mapel["nis"].astype(str), df_n_mapel["poin"])
           )
 
+          rows = []
           for idx, (_, s_row) in enumerate(df_m_kelas.iterrows(), 1):
-            row_num = 4 + idx
             nis_siswa = str(s_row["nis"])
             nama_siswa = s_row["nama"]
             nilai_pg = dict_nilai.get(nis_siswa, 0.0)
+            rows.append({"NO": idx, "NAMA": nama_siswa, "NILAI PG": nilai_pg})
 
-            c_no = ws.cell(row=row_num, column=1, value=idx)
-            c_nama = ws.cell(row=row_num, column=2, value=nama_siswa)
-            c_nilai = ws.cell(row=row_num, column=3, value=nilai_pg)
+          df_preview = pd.DataFrame(rows)
+          if df_preview.empty:
+            st.info(f"Tidak ada data siswa untuk kelas {kelas}.")
+          else:
+            st.dataframe(df_preview, use_container_width=True, hide_index=True)
 
-            c_no.alignment = Alignment(horizontal="center", vertical="center")
-            c_nama.alignment = Alignment(horizontal="left", vertical="center")
-            c_nilai.alignment = Alignment(horizontal="center", vertical="center")
+          preview_data[kelas] = df_preview
 
-            c_no.border = thin_border
-            c_nama.border = thin_border
-            c_nilai.border = thin_border
+        st.markdown("---")
+        if st.button("📥 Generate & Download Excel (Multi-Sheet)"):
+          output = io.BytesIO()
+          wb = openpyxl.Workbook()
+          default_sheet = wb.active
+          wb.remove(default_sheet)
 
-          ws.column_dimensions["A"].width = 8
-          ws.column_dimensions["B"].width = 38
-          ws.column_dimensions["C"].width = 16
+          font_title = Font(name="Calibri", size=11, bold=True)
+          font_bold = Font(name="Calibri", size=11, bold=True)
+          fill_header = PatternFill(
+              start_color="D9D9D9", end_color="D9D9D9", fill_type="solid"
+          )
+          thin_border = Border(
+              left=Side(style="thin", color="000000"),
+              right=Side(style="thin", color="000000"),
+              top=Side(style="thin", color="000000"),
+              bottom=Side(style="thin", color="000000"),
+          )
 
-        wb.save(output)
-        output.seek(0)
+          for kelas, df_prev in preview_data.items():
+            safe_sheet_name = re.sub(r"[\\/?:*\[\]]", "-", str(kelas))[:31]
+            ws = wb.create_sheet(title=safe_sheet_name)
 
-        st.success("File rekap multi-kelas berhasil dibuat!")
-        st.download_button(
-            label="📥 Download File Excel Rekap (Multi-Sheet)",
-            data=output,
-            file_name=f"Rekap_Nilai_{pilih_mapel}.xlsx",
-            mime=(
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            ),
-        )
+            ws.merge_cells("A1:C1")
+            ws["A1"] = f"MATA PELAJARAN : {pilih_mapel}"
+            ws["A1"].font = font_title
+            ws["A1"].alignment = Alignment(horizontal="left", vertical="center")
 
-  # --- MENU 3: CEK SISWA BELUM UJIAN (DENGAN FILTER TINGKAT KELAS OTOMATIS) ---
+            ws.merge_cells("A2:C2")
+            ws["A2"] = f"KELAS : {kelas}"
+            ws["A2"].font = font_title
+            ws["A2"].alignment = Alignment(horizontal="left", vertical="center")
+
+            headers = ["NO", "NAMA", "NILAI PG"]
+            for col_num, h_title in enumerate(headers, 1):
+              cell = ws.cell(row=4, column=col_num, value=h_title)
+              cell.font = font_bold
+              cell.fill = fill_header
+              cell.alignment = Alignment(horizontal="center", vertical="center")
+              cell.border = thin_border
+
+            for _, r_data in df_prev.iterrows():
+              r_idx = int(r_data["NO"])
+              row_num = 4 + r_idx
+
+              c_no = ws.cell(row=row_num, column=1, value=r_idx)
+              c_nama = ws.cell(row=row_num, column=2, value=r_data["NAMA"])
+              c_nilai = ws.cell(row=row_num, column=3, value=r_data["NILAI PG"])
+
+              c_no.alignment = Alignment(
+                  horizontal="center", vertical="center"
+              )
+              c_nama.alignment = Alignment(horizontal="left", vertical="center")
+              c_nilai.alignment = Alignment(
+                  horizontal="center", vertical="center"
+              )
+
+              c_no.border = thin_border
+              c_nama.border = thin_border
+              c_nilai.border = thin_border
+
+            ws.column_dimensions["A"].width = 8
+            ws.column_dimensions["B"].width = 38
+            ws.column_dimensions["C"].width = 16
+
+          wb.save(output)
+          output.seek(0)
+
+          st.success("File rekap multi-kelas berhasil dibuat!")
+          st.download_button(
+              label="📥 Download File Excel Rekap (Multi-Sheet)",
+              data=output,
+              file_name=f"Rekap_Nilai_{pilih_mapel}.xlsx",
+              mime=(
+                  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              ),
+          )
+
+  # --- MENU 3: CEK SISWA BELUM UJIAN ---
   elif menu == "3. Cek Siswa Belum Ujian":
     st.header("Pelacak Siswa Belum Mengikuti Ujian")
 
@@ -434,7 +460,6 @@ else:
           key="cek_mapel",
       )
 
-      # Deteksi tingkat kelas (7, 8, atau 9) dari nama tes
       match_grade = re.search(r"\b([789])\b", pilih_mapel)
       if match_grade:
         grade_num = match_grade.group(1)
@@ -450,7 +475,6 @@ else:
             query_belum, conn, params=(f"%{grade_num}%", pilih_mapel)
         )
       else:
-        # Fallback jika nama tes tidak mengandung angka 7/8/9
         query_belum = """
                     SELECT m.kelas, m.nis, m.nama 
                     FROM master_siswa m
