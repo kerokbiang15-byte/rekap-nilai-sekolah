@@ -420,7 +420,7 @@ else:
             ),
         )
 
-  # --- MENU 3: CEK SISWA BELUM UJIAN ---
+  # --- MENU 3: CEK SISWA BELUM UJIAN (DENGAN FILTER TINGKAT KELAS OTOMATIS) ---
   elif menu == "3. Cek Siswa Belum Ujian":
     st.header("Pelacak Siswa Belum Mengikuti Ujian")
 
@@ -434,15 +434,32 @@ else:
           key="cek_mapel",
       )
 
-      query_belum = """
-            SELECT m.kelas, m.nis, m.nama 
-            FROM master_siswa m
-            WHERE m.nis NOT IN (
-                SELECT h.nis FROM hasil_ujian h WHERE h.nama_tes = ?
-            )
-            ORDER BY m.kelas, m.nama
-        """
-      df_belum = pd.read_sql(query_belum, conn, params=(pilih_mapel,))
+      # Deteksi tingkat kelas (7, 8, atau 9) dari nama tes
+      match_grade = re.search(r"\b([789])\b", pilih_mapel)
+      if match_grade:
+        grade_num = match_grade.group(1)
+        query_belum = f"""
+                    SELECT m.kelas, m.nis, m.nama 
+                    FROM master_siswa m
+                    WHERE m.kelas LIKE ? AND m.nis NOT IN (
+                        SELECT h.nis FROM hasil_ujian h WHERE h.nama_tes = ?
+                    )
+                    ORDER BY m.kelas, m.nama
+                """
+        df_belum = pd.read_sql(
+            query_belum, conn, params=(f"%{grade_num}%", pilih_mapel)
+        )
+      else:
+        # Fallback jika nama tes tidak mengandung angka 7/8/9
+        query_belum = """
+                    SELECT m.kelas, m.nis, m.nama 
+                    FROM master_siswa m
+                    WHERE m.nis NOT IN (
+                        SELECT h.nis FROM hasil_ujian h WHERE h.nama_tes = ?
+                    )
+                    ORDER BY m.kelas, m.nama
+                """
+        df_belum = pd.read_sql(query_belum, conn, params=(pilih_mapel,))
 
       if df_belum.empty:
         st.info("Hebat! Semua siswa sudah mengikuti ujian untuk mata pelajaran ini.")
