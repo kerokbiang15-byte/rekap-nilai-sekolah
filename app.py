@@ -256,6 +256,8 @@ else:
 
     with tab_up4:
       st.subheader("4. Kelola & Hapus Data di Database (Multiple Choice)")
+
+      st.markdown("##### 🗑️ Hapus Data Hasil Ujian")
       df_mapel_del = pd.read_sql(
           "SELECT DISTINCT nama_tes FROM hasil_ujian", conn
       )
@@ -263,11 +265,12 @@ else:
         st.info("Belum ada data hasil ujian di dalam database.")
       else:
         pilih_hapus_tes_list = st.multiselect(
-            "Pilih Nama Tes / Mata Pelajaran yang ingin dihapus datanya (bisa"
-            " pilih lebih dari satu):",
+            "Pilih Mata Pelajaran Ujian yang ingin dihapus (bisa lebih dari"
+            " satu):",
             df_mapel_del["nama_tes"].tolist(),
+            key="del_ujian_multiselect",
         )
-        if st.button("🗑️ Hapus Data Tes yang Dipilih", type="primary"):
+        if st.button("🗑️ Hapus Data Ujian yang Dipilih", type="primary"):
           if pilih_hapus_tes_list:
             cursor = conn.cursor()
             for tes in pilih_hapus_tes_list:
@@ -281,7 +284,37 @@ else:
             )
             st.rerun()
           else:
-            st.warning("Pilih minimal satu mata pelajaran yang ingin dihapus.")
+            st.warning("Pilih minimal satu mata pelajaran ujian.")
+
+      st.markdown("---")
+      st.markdown("##### 🗑️ Hapus Data Remedial")
+      df_mapel_rem_del = pd.read_sql(
+          "SELECT DISTINCT nama_tes FROM remedial_siswa", conn
+      )
+      if df_mapel_rem_del.empty:
+        st.info("Belum ada data remedial di dalam database.")
+      else:
+        pilih_hapus_rem_list = st.multiselect(
+            "Pilih Mata Pelajaran Remedial yang ingin dihapus (bisa lebih dari"
+            " satu):",
+            df_mapel_rem_del["nama_tes"].tolist(),
+            key="del_remedial_multiselect",
+        )
+        if st.button("🗑️ Hapus Data Remedial yang Dipilih", type="primary"):
+          if pilih_hapus_rem_list:
+            cursor = conn.cursor()
+            for tes in pilih_hapus_rem_list:
+              cursor.execute(
+                  "DELETE FROM remedial_siswa WHERE nama_tes = ?", (tes,)
+              )
+            conn.commit()
+            st.success(
+                "Data remedial untuk mata pelajaran yang dipilih berhasil"
+                " dihapus!"
+            )
+            st.rerun()
+          else:
+            st.warning("Pilih minimal satu mata pelajaran remedial.")
 
       st.markdown("---")
       col_r1, col_r2, col_r3 = st.columns(3)
