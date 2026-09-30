@@ -163,9 +163,9 @@ else:
                   "INSERT OR REPLACE INTO master_siswa (nis, nama, kelas)"
                   " VALUES (?, ?, ?)",
                   (
-                      str(row[nis_col]),
-                      str(row[nama_col]),
-                      str(row[kelas_col]),
+                      str(row[nis_col]).strip(),
+                      str(row[nama_col]).strip(),
+                      str(row[kelas_col]).strip(),
                   ),
               )
             conn.commit()
@@ -204,14 +204,26 @@ else:
           if st.button("Simpan Hasil Ujian ke Database"):
             cursor = conn.cursor()
             for _, row in df_u.iterrows():
+              # Sinkronisasi kelas otomatis dengan master siswa berdasarkan NIS
+              nis_val = str(row[nis_c]).strip()
+              cursor.execute(
+                  "SELECT kelas FROM master_siswa WHERE nis = ?", (nis_val,)
+              )
+              res_m = cursor.fetchone()
+              kelas_val = (
+                  res_m[0]
+                  if res_m
+                  else str(row[kelas_c]).strip()
+              )
+
               cursor.execute(
                   "INSERT INTO hasil_ujian (nama_tes, nis, nama, kelas, poin,"
                   " status) VALUES (?, ?, ?, ?, ?, 'normal')",
                   (
-                      str(row[tes_c]),
-                      str(row[nis_c]),
-                      str(row[nama_c]),
-                      str(row[kelas_c]),
+                      str(row[tes_c]).strip(),
+                      nis_val,
+                      str(row[nama_c]).strip(),
+                      kelas_val,
                       float(row[poin_c]),
                   ),
               )
@@ -240,7 +252,7 @@ else:
         nama_rc = col_map_r.get("nama")
         kelas_rc = col_map_r.get("group") or col_map_r.get("kelas")
 
-        if not tes_rc or not nis_rc or not nama_rc or not kelas_rc:
+        if not tes_rc or not nis_rc or not nama_rc:
           st.error(
               f"Kolom file remedial tidak sesuai! Kolom terbaca:"
               f" {list(df_r.columns)}"
@@ -250,14 +262,33 @@ else:
           if st.button("Simpan Data Remedial ke Database"):
             cursor = conn.cursor()
             for _, row in df_r.iterrows():
+              nis_val = str(row[nis_rc]).strip()
+              # Ambil data kelas dan nama lengkap langsung dari master siswa berdasarkan NIS jika kosong/tidak lengkap
+              cursor.execute(
+                  "SELECT kelas, nama FROM master_siswa WHERE nis = ?",
+                  (nis_val,),
+              )
+              res_m = cursor.fetchone()
+
+              if res_m:
+                kelas_val = res_m[0]
+                nama_val = res_m[1]
+              else:
+                kelas_val = (
+                    str(row[kelas_rc]).strip()
+                    if kelas_rc and pd.notna(row[kelas_rc])
+                    else "-"
+                )
+                nama_val = str(row[nama_rc]).strip()
+
               cursor.execute(
                   "INSERT INTO remedial_siswa (nama_tes, nis, nama, kelas)"
                   " VALUES (?, ?, ?, ?)",
                   (
-                      str(row[tes_rc]),
-                      str(row[nis_rc]),
-                      str(row[nama_rc]),
-                      str(row[kelas_rc]),
+                      str(row[tes_rc]).strip(),
+                      nis_val,
+                      nama_val,
+                      kelas_val,
                   ),
               )
             conn.commit()
@@ -303,7 +334,11 @@ else:
                                 SET poin = ?, status = 'remedial' 
                                 WHERE nis = ? AND nama_tes = ?
                             """,
-                  (float(row[poin_ur]), str(row[nis_ur]), str(row[tes_ur])),
+                  (
+                      float(row[poin_ur]),
+                      str(row[nis_ur]).strip(),
+                      str(row[tes_ur]).strip(),
+                  ),
               )
               updated_count += cursor.rowcount
             conn.commit()
@@ -694,7 +729,6 @@ else:
           key="multiselect_mapel_rem",
       )
 
-      # Callback aman untuk Select All Kelas tanpa membuat loading/infinite loop
       if "multiselect_kelas_rem" not in st.session_state:
         st.session_state.multiselect_kelas_rem = []
 
