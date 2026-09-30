@@ -7,6 +7,17 @@ import sqlite3
 import streamlit as st
 
 
+# --- FUNGSI BANTU PENCOCOKAN NAMA TES CERDAS ---
+def clean_tes_name(name):
+  if not name:
+    return ""
+  # Hapus kata STS, PAS, PTS, UH, US, dll. untuk pencocokan fleksibel
+  cleaned = re.sub(
+      r"\b(sts|pas|pts|uh|us|tp|uas|uts)\b", "", str(name), flags=re.IGNORECASE
+  )
+  return re.sub(r"\s+", " ", cleaned).strip().lower()
+
+
 # --- KONEKSI DATABASE SQLITE & MIGRASI OTOMATIS ---
 def init_db():
   conn = sqlite3.connect("sekolah.db", check_same_thread=False)
@@ -206,6 +217,8 @@ else:
             for _, row in df_u.iterrows():
               nis_val = str(row[nis_c]).strip()
               nama_tes_val = str(row[tes_c]).strip()
+              clean_upload_tes = clean_tes_name(nama_tes_val)
+
               cursor.execute(
                   "SELECT kelas FROM master_siswa WHERE nis = ?", (nis_val,)
               )
@@ -216,13 +229,22 @@ else:
                   else str(row[kelas_c]).strip()
               )
 
+              # Cek apakah siswa ini terdaftar di remedial/susulan secara fleksibel
               cursor.execute(
-                  "SELECT id FROM remedial_siswa WHERE nis = ? AND (nama_tes ="
-                  " ? OR ? LIKE '%' || nama_tes || '%' OR nama_tes LIKE '%' ||"
-                  " ? || '%')",
-                  (nis_val, nama_tes_val, nama_tes_val, nama_tes_val),
+                  "SELECT nama_tes FROM remedial_siswa WHERE nis = ?",
+                  (nis_val,),
               )
-              is_susulan = cursor.fetchone()
+              all_rem = cursor.fetchall()
+              is_susulan = False
+              for (r_tes,) in all_rem:
+                clean_r_tes = clean_tes_name(r_tes)
+                if (
+                    clean_r_tes in clean_upload_tes
+                    or clean_upload_tes in clean_r_tes
+                ):
+                  is_susulan = True
+                  break
+
               status_ujian = "susulan" if is_susulan else "normal"
 
               cursor.execute(
@@ -415,7 +437,7 @@ else:
             key="edit_kelas_multiselect",
         )
         if st.button(
-            "🗑️ Hapus Kelas Terpilih dari Ujian Ini", type="primary"
+            "🗑️️ Hapus Kelas Terpilih dari Ujian Ini", type="primary"
         ):
           if pilih_kelas_hapus_list:
             cursor = conn.cursor()
@@ -499,7 +521,7 @@ else:
           st.warning("Semua data hasil ujian dikosongkan!")
           st.rerun()
       with col_r2:
-        if st.button("⚠️️ Kosongkan SEMUA Data Master"):
+        if st.button("⚠️ Kosongkan SEMUA Data Master"):
           cursor = conn.cursor()
           cursor.execute("DELETE FROM master_siswa")
           conn.commit()
@@ -550,17 +572,16 @@ else:
               params=(kelas,),
           )
           df_n_mapel = pd.read_sql(
-              "SELECT nis, poin, status FROM hasil_ujian WHERE nama_tes = ?",
+              "SELECT nis, poin, status, nama_tes FROM hasil_ujian WHERE nama_tes"
+              " = ?",
               conn,
               params=(pilih_mapel,),
           )
 
-          dict_nilai = dict(
-              zip(
-                  df_n_mapel["nis"].astype(str),
-                  zip(df_n_mapel["poin"], df_n_mapel["status"]),
-              )
-          )
+          # Mapping fleksibel berdasarkan nis atau kecocokan nama tes
+          dict_nilai = {}
+          for _, n_row in df_n_mapel.iterrows():
+            dict_nilai[str(n_row["nis"])] = (n_row["poin"], n_row["status"])
 
           rows = []
           for idx, (_, s_row) in enumerate(df_m_kelas.iterrows(), 1):
