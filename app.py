@@ -185,7 +185,11 @@ else:
             st.success("Data Master Siswa berhasil disimpan!")
 
     with tab_up2:
-      st.subheader("2. Upload Hasil Ujian Mentah dari CBT")
+      st.subheader("2. Upload Hasil Ujian CBT (Utama / Susulan)")
+      st.markdown(
+          "Sistem otomatis mendeteksi: Jika siswa belum pernah punya nilai,"
+          ' statusnya otomatis **"Sudah Susulan"**.'
+      )
       file_ujian = st.file_uploader(
           "Pilih file Hasil Ujian", type=["xlsx", "csv"], key="ujian"
       )
@@ -213,26 +217,33 @@ else:
               clean_upload_tes = clean_tes_name(nama_tes_val)
               poin_val = parse_poin(row[poin_c])
 
-              # Ambil kelas dan nama valid dari master siswa berdasarkan NIS
               cursor.execute(
                   "SELECT kelas, nama FROM master_siswa WHERE nis = ?",
                   (nis_val,),
               )
               res_m = cursor.fetchone()
-              if res_m:
-                kelas_val = res_m[0]
-                nama_val = res_m[1]
-              else:
-                kelas_val = str(row[kelas_c]).strip()
-                nama_val = str(row[nama_c]).strip()
+              kelas_val = res_m[0] if res_m else str(row[kelas_c]).strip()
+              nama_val = res_m[1] if res_m else str(row[nama_c]).strip()
 
-              # Cek apakah siswa terdaftar sebagai susulan/remedial
+              # Cek apakah siswa ini sudah memiliki nilai sebelumnya untuk tes ini
+              cursor.execute(
+                  "SELECT id, nama_tes, status FROM hasil_ujian WHERE nis = ?",
+                  (nis_val,),
+              )
+              existing_exams = cursor.fetchall()
+              had_previous_score = False
+              for _, ex_tes, ex_status in existing_exams:
+                if clean_tes_name(ex_tes) == clean_upload_tes:
+                  had_previous_score = True
+                  break
+
+              # Cek apakah terdaftar di remedial_siswa (dari data guru)
               cursor.execute(
                   "SELECT nama_tes FROM remedial_siswa WHERE nis = ?",
                   (nis_val,),
               )
               all_rem = cursor.fetchall()
-              is_susulan = False
+              is_remedial_candidate = False
               for (r_tes,) in all_rem:
                 clean_r_tes = clean_tes_name(r_tes)
                 if (
@@ -240,14 +251,26 @@ else:
                     or clean_r_tes in clean_upload_tes
                     or clean_upload_tes in clean_r_tes
                 ):
-                  is_susulan = True
+                  is_remedial_candidate = True
                   break
 
-              status_ujian = "susulan" if is_susulan else "normal"
+              # Penentuan Status Otomatis:
+              # - Jika terdaftar di data remedial guru -> 'remedial' ("Sudah Remedial")
+              # - Jika sebelumnya belum punya nilai sama sekali -> 'susulan' ("Sudah Susulan")
+              # - Jika sudah punya nilai sebelumnya dan tidak remedial -> update/normal
+              if is_remedial_candidate:
+                status_ujian = "remedial"
+              elif not had_previous_score:
+                status_ujian = "susulan"
+              else:
+                status_ujian = "normal"
 
+              # Jika sudah ada record sebelumnya untuk tes ini, update; jika belum, insert baru
               cursor.execute(
-                  "INSERT INTO hasil_ujian (nama_tes, nis, nama, kelas, poin,"
-                  " status) VALUES (?, ?, ?, ?, ?, ?)",
+                  """
+                                INSERT INTO hasil_ujian (nama_tes, nis, nama, kelas, poin, status)
+                                VALUES (?, ?, ?, ?, ?, ?)
+                            """,
                   (
                       nama_tes_val,
                       nis_val,
@@ -258,12 +281,10 @@ else:
                   ),
               )
             conn.commit()
-            st.success(
-                "Data Hasil Ujian berhasil di-upload dan tersimpan di database!"
-            )
+            st.success("Data Hasil Ujian berhasil di-upload dan disimpan!")
 
     with tab_up3:
-      st.subheader("3. Upload Data Siswa Remedial / Susulan")
+      st.subheader("3. Upload Data Siswa Remedial / Susulan dari Guru")
       file_rem = st.file_uploader(
           "Pilih file Data Remedial", type=["xlsx", "csv"], key="remedial_file"
       )
@@ -312,10 +333,10 @@ else:
                   ),
               )
             conn.commit()
-            st.success("Data Remedial/Susulan berhasil disimpan!")
+            st.success("Data Remedial berhasil disimpan!")
 
     with tab_up4:
-      st.subheader("4. Upload Update Nilai Remedial (Perbarui Nilai)")
+      st.subheader("4. Upload Update Nilai Remedial")
       file_up_rem = st.file_uploader(
           "Pilih file Update Nilai Remedial",
           type=["xlsx", "csv"],
@@ -344,33 +365,27 @@ else:
                   """
                                 UPDATE hasil_ujian 
                                 SET poin = ?, status = 'remedial' 
-                                WHERE nis = ? AND nama_tes = ?
+                                WHERE nis = ? 
                             """,
-                  (
-                      poin_val,
-                      str(row[nis_ur]).strip(),
-                      str(row[tes_ur]).strip(),
-                  ),
+                  (poin_val, str(row[nis_ur]).strip()),
               )
               updated_count += cursor.rowcount
             conn.commit()
-            st.success(f"Berhasil memperbarui {updated_count} nilai remedial!")
+            st.success(
+                f"Berhasil memperbarui {updated_count} nilai siswa remedial"
+                " menjadi 'Sudah Remedial'!"
+            )
 
     with tab_up5:
       st.subheader("5. Kelola, Hapus & Cek Database (Debug)")
-      st.markdown(
-          "##### 🔍 Cek Data Tersimpan Berdasarkan NIS (Cari Siswa Tertentu)"
-      )
-      cari_nis = st.text_input(
-          "Masukkan NIS Siswa (Contoh: 2425072177 untuk Abbas):"
-      )
+      cari_nis = st.text_input("Masukkan NIS Siswa (Cari Data):")
       if cari_nis:
         df_cek_hasil = pd.read_sql(
             "SELECT * FROM hasil_ujian WHERE nis = ?",
             conn,
             params=(cari_nis.strip(),),
         )
-        st.write("**Hasil Ujian Terdaftar untuk NIS tersebut:**")
+        st.write("**Hasil Ujian Terdaftar:**")
         st.dataframe(df_cek_hasil, use_container_width=True)
 
         df_cek_rem = pd.read_sql(
@@ -378,7 +393,7 @@ else:
             conn,
             params=(cari_nis.strip(),),
         )
-        st.write("**Data Remedial/Susulan untuk NIS tersebut:**")
+        st.write("**Data Remedial Terdaftar:**")
         st.dataframe(df_cek_rem, use_container_width=True)
 
       st.markdown("---")
@@ -419,7 +434,6 @@ else:
         preview_data = {}
         cleaned_selected_tes = clean_tes_name(pilih_mapel)
 
-        # Ambil semua data hasil ujian dan cocokkan secara fleksibel
         df_all_ujian = pd.read_sql(
             "SELECT nis, poin, status, nama_tes FROM hasil_ujian", conn
         )
@@ -493,12 +507,12 @@ else:
             safe_sheet_name = re.sub(r"[\\/?:*\[\]]", "-", str(kelas))[:31]
             ws = wb.create_sheet(title=safe_sheet_name)
 
-            ws.merge_cells("A1:C1")
+            ws.merge_cells("A1:D1")
             ws["A1"] = f"MATA PELAJARAN : {pilih_mapel}"
             ws["A1"].font = font_title
             ws["A1"].alignment = Alignment(horizontal="left", vertical="center")
 
-            ws.merge_cells("A2:C2")
+            ws.merge_cells("A2:D2")
             ws["A2"] = f"KELAS : {kelas}"
             ws["A2"].font = font_title
             ws["A2"].alignment = Alignment(horizontal="left", vertical="center")
@@ -533,6 +547,10 @@ else:
               if status_s == "remedial":
                 c_nilai.font = Font(
                     name="Calibri", size=11, color="008000", bold=True
+                )
+              elif status_s == "susulan":
+                c_nilai.font = Font(
+                    name="Calibri", size=11, color="0000FF", bold=True
                 )
               else:
                 c_nilai.font = Font(name="Calibri", size=11)
