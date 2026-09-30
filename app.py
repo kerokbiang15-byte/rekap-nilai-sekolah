@@ -694,20 +694,27 @@ else:
           key="multiselect_mapel_rem",
       )
 
-      select_all_kls_rem = st.checkbox(
-          "Pilih Semua Kelas Remedial", key="select_all_kls_rem_chk"
+      # Callback aman untuk Select All Kelas tanpa membuat loading/infinite loop
+      if "multiselect_kelas_rem" not in st.session_state:
+        st.session_state.multiselect_kelas_rem = []
+
+
+      def toggle_all_kelas():
+        if st.session_state.get("select_all_kls_rem_chk", False):
+          st.session_state.multiselect_kelas_rem = list_kelas_rem
+        else:
+          st.session_state.multiselect_kelas_rem = []
+
+
+      st.checkbox(
+          "Pilih Semua Kelas Remedial",
+          key="select_all_kls_rem_chk",
+          on_change=toggle_all_kelas,
       )
-      if select_all_kls_rem:
-        pilih_kelas_rem = st.multiselect(
-            "Pilih Kelas:",
-            list_kelas_rem,
-            default=list_kelas_rem,
-            key="multiselect_kelas_rem",
-        )
-      else:
-        pilih_kelas_rem = st.multiselect(
-            "Pilih Kelas:", list_kelas_rem, key="multiselect_kelas_rem"
-        )
+
+      pilih_kelas_rem = st.multiselect(
+          "Pilih Kelas:", list_kelas_rem, key="multiselect_kelas_rem"
+      )
 
       if pilih_mapel_rem or pilih_kelas_rem:
         query_r = "SELECT nama_tes, kelas, nis, nama FROM remedial_siswa WHERE 1=1"
