@@ -53,6 +53,12 @@ def init_db():
             status TEXT DEFAULT 'normal'
         )
     """)
+  # Buat Unique Index agar NIS + Nama Tes tidak duplikat (bisa di-update otomatis)
+  cursor.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_nis_tes 
+        ON hasil_ujian (nis, nama_tes)
+    """)
+
   cursor.execute("PRAGMA table_info(hasil_ujian)")
   columns = [info[1] for info in cursor.fetchall()]
   if "status" not in columns:
@@ -238,7 +244,6 @@ else:
               if "Utama" in jenis_upload:
                 status_ujian = "normal"
               else:
-                # Cek apakah siswa terdaftar di remedial
                 cursor.execute(
                     "SELECT nama_tes FROM remedial_siswa WHERE nis = ?",
                     (nis_val,),
@@ -260,9 +265,10 @@ else:
                 else:
                   status_ujian = "susulan"
 
+              # Menggunakan INSERT OR REPLACE untuk menghindari duplikat dan meng-update nilai/status
               cursor.execute(
                   """
-                                INSERT INTO hasil_ujian (nama_tes, nis, nama, kelas, poin, status)
+                                INSERT OR REPLACE INTO hasil_ujian (nama_tes, nis, nama, kelas, poin, status)
                                 VALUES (?, ?, ?, ?, ?, ?)
                             """,
                   (
@@ -275,7 +281,7 @@ else:
                   ),
               )
             conn.commit()
-            st.success("Data Hasil Ujian berhasil di-upload dan disimpan!")
+            st.success("Data Hasil Ujian berhasil di-upload dan diperbarui!")
 
     with tab_up3:
       st.subheader("3. Upload Data Siswa Remedial dari Guru")
@@ -434,7 +440,7 @@ else:
             key="edit_kelas_multiselect",
         )
         if st.button(
-            "🗑️️ Hapus Kelas Terpilih dari Ujian Ini", type="primary"
+            "🗑️ Hapus Kelas Terpilih dari Ujian Ini", type="primary"
         ):
           if pilih_kelas_hapus_list:
             cursor = conn.cursor()
