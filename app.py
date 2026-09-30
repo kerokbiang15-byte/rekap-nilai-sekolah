@@ -7,15 +7,26 @@ import sqlite3
 import streamlit as st
 
 
-# --- FUNGSI BANTU PENCOCOKAN NAMA TES CERDAS ---
+# --- FUNGSI BANTU PENCOCOKAN & PARSING ---
 def clean_tes_name(name):
   if not name:
     return ""
-  # Hapus kata STS, PAS, PTS, UH, US, dll. untuk pencocokan fleksibel
   cleaned = re.sub(
       r"\b(sts|pas|pts|uh|us|tp|uas|uts)\b", "", str(name), flags=re.IGNORECASE
   )
   return re.sub(r"\s+", " ", cleaned).strip().lower()
+
+
+def parse_poin(val):
+  if pd.isna(val):
+    return 0.0
+  if isinstance(val, (int, float)):
+    return float(val)
+  val_str = str(val).strip().replace(",", ".")
+  try:
+    return float(val_str)
+  except:
+    return 0.0
 
 
 # --- KONEKSI DATABASE SQLITE & MIGRASI OTOMATIS ---
@@ -218,6 +229,7 @@ else:
               nis_val = str(row[nis_c]).strip()
               nama_tes_val = str(row[tes_c]).strip()
               clean_upload_tes = clean_tes_name(nama_tes_val)
+              poin_val = parse_poin(row[poin_c])
 
               cursor.execute(
                   "SELECT kelas FROM master_siswa WHERE nis = ?", (nis_val,)
@@ -239,7 +251,8 @@ else:
               for (r_tes,) in all_rem:
                 clean_r_tes = clean_tes_name(r_tes)
                 if (
-                    clean_r_tes in clean_upload_tes
+                    clean_r_tes == clean_upload_tes
+                    or clean_r_tes in clean_upload_tes
                     or clean_upload_tes in clean_r_tes
                 ):
                   is_susulan = True
@@ -255,7 +268,7 @@ else:
                       nis_val,
                       str(row[nama_c]).strip(),
                       kelas_val,
-                      float(row[poin_c]),
+                      poin_val,
                       status_ujian,
                   ),
               )
@@ -359,6 +372,7 @@ else:
             cursor = conn.cursor()
             updated_count = 0
             for _, row in df_up_r.iterrows():
+              poin_val = parse_poin(row[poin_ur])
               cursor.execute(
                   """
                                 UPDATE hasil_ujian 
@@ -366,7 +380,7 @@ else:
                                 WHERE nis = ? AND nama_tes = ?
                             """,
                   (
-                      float(row[poin_ur]),
+                      poin_val,
                       str(row[nis_ur]).strip(),
                       str(row[tes_ur]).strip(),
                   ),
@@ -437,7 +451,7 @@ else:
             key="edit_kelas_multiselect",
         )
         if st.button(
-            "🗑️️ Hapus Kelas Terpilih dari Ujian Ini", type="primary"
+            "🗑️ Hapus Kelas Terpilih dari Ujian Ini", type="primary"
         ):
           if pilih_kelas_hapus_list:
             cursor = conn.cursor()
@@ -563,6 +577,20 @@ else:
         st.subheader("👀 Pratinjau (Preview) Data Nilai")
 
         preview_data = {}
+        cleaned_selected_tes = clean_tes_name(pilih_mapel)
+
+        # Ambil semua data hasil ujian yang cocok secara fleksibel dengan nama tes yang dipilih
+        df_all_ujian = pd.read_sql(
+            "SELECT nis, poin, status, nama_tes FROM hasil_ujian", conn
+        )
+        df_matched_ujian = df_all_ujian[
+            df_all_ujian["nama_tes"].apply(clean_tes_name)
+            == cleaned_selected_tes
+        ]
+
+        dict_nilai = {}
+        for _, n_row in df_matched_ujian.iterrows():
+          dict_nilai[str(n_row["nis"])] = (n_row["poin"], n_row["status"])
 
         for kelas in pilih_kelas:
           st.markdown(f"**Kelas: {kelas}**")
@@ -571,17 +599,6 @@ else:
               conn,
               params=(kelas,),
           )
-          df_n_mapel = pd.read_sql(
-              "SELECT nis, poin, status, nama_tes FROM hasil_ujian WHERE nama_tes"
-              " = ?",
-              conn,
-              params=(pilih_mapel,),
-          )
-
-          # Mapping fleksibel berdasarkan nis atau kecocokan nama tes
-          dict_nilai = {}
-          for _, n_row in df_n_mapel.iterrows():
-            dict_nilai[str(n_row["nis"])] = (n_row["poin"], n_row["status"])
 
           rows = []
           for idx, (_, s_row) in enumerate(df_m_kelas.iterrows(), 1):
@@ -632,18 +649,6 @@ else:
               bottom=Side(style="thin", color="000000"),
           )
 
-          df_n_mapel_all = pd.read_sql(
-              "SELECT nis, status FROM hasil_ujian WHERE nama_tes = ?",
-              conn,
-              params=(pilih_mapel,),
-          )
-          dict_status = dict(
-              zip(
-                  df_n_mapel_all["nis"].astype(str),
-                  df_n_mapel_all["status"],
-              )
-          )
-
           for kelas, df_prev in preview_data.items():
             safe_sheet_name = re.sub(r"[\\/?:*\[\]]", "-", str(kelas))[:31]
             ws = wb.create_sheet(title=safe_sheet_name)
@@ -658,22 +663,13 @@ else:
             ws["A2"].font = font_title
             ws["A2"].alignment = Alignment(horizontal="left", vertical="center")
 
-            headers = ["NO", "NAMA", "NILAI PG"]
+            headers = ["NO", "NAMA", "NILAI PG", "KET"]
             for col_num, h_title in enumerate(headers, 1):
               cell = ws.cell(row=4, column=col_num, value=h_title)
               cell.font = font_bold
               cell.fill = fill_header
               cell.alignment = Alignment(horizontal="center", vertical="center")
               cell.border = thin_border
-
-            df_m_kls_full = pd.read_sql(
-                "SELECT nis FROM master_siswa WHERE kelas = ?",
-                conn,
-                params=(kelas,),
-            )
-            dict_nis_by_idx = dict(
-                enumerate(df_m_kls_full["nis"].astype(str), 1)
-            )
 
             for _, r_data in df_prev.iterrows():
               r_idx = int(r_data["NO"])
@@ -682,9 +678,17 @@ else:
               c_no = ws.cell(row=row_num, column=1, value=r_idx)
               c_nama = ws.cell(row=row_num, column=2, value=r_data["NAMA"])
               c_nilai = ws.cell(row=row_num, column=3, value=r_data["NILAI PG"])
+              c_ket = ws.cell(row=row_num, column=4, value=r_data["KET"])
 
-              nis_s = dict_nis_by_idx.get(r_idx, "")
-              status_s = dict_status.get(nis_s)
+              nis_s = str(
+                  pd.read_sql(
+                      "SELECT nis FROM master_siswa WHERE kelas = ? AND nama ="
+                      " ?",
+                      conn,
+                      params=(kelas, r_data["NAMA"]),
+                  ).iloc[0]["nis"]
+              )
+              status_s = dict_nilai.get(nis_s, (0.0, "normal"))[1]
 
               if status_s == "remedial":
                 c_nilai.font = Font(
@@ -700,14 +704,19 @@ else:
               c_nilai.alignment = Alignment(
                   horizontal="center", vertical="center"
               )
+              c_ket.alignment = Alignment(
+                  horizontal="center", vertical="center"
+              )
 
               c_no.border = thin_border
               c_nama.border = thin_border
               c_nilai.border = thin_border
+              c_ket.border = thin_border
 
             ws.column_dimensions["A"].width = 8
             ws.column_dimensions["B"].width = 38
             ws.column_dimensions["C"].width = 16
+            ws.column_dimensions["D"].width = 20
 
           wb.save(output)
           output.seek(0)
@@ -736,30 +745,29 @@ else:
           key="cek_mapel",
       )
 
-      match_grade = re.search(r"\b([789])\b", pilih_mapel)
-      if match_grade:
-        grade_num = match_grade.group(1)
+      # Ambil semua nis yang sudah ujian (fleksibel dengan nama tes)
+      cleaned_cek_tes = clean_tes_name(pilih_mapel)
+      df_all_ujian = pd.read_sql(
+          "SELECT nis, nama_tes FROM hasil_ujian", conn
+      )
+      matched_nis = df_all_ujian[
+          df_all_ujian["nama_tes"].apply(clean_tes_name) == cleaned_cek_tes
+      ]["nis"].astype(str).tolist()
+
+      if matched_nis:
+        placeholders = ",".join(["?"] * len(matched_nis))
         query_belum = f"""
-                    SELECT m.kelas, m.nis, m.nama 
-                    FROM master_siswa m
-                    WHERE m.kelas LIKE ? AND m.nis NOT IN (
-                        SELECT h.nis FROM hasil_ujian h WHERE h.nama_tes = ?
-                    )
-                    ORDER BY m.kelas, m.nama
+                    SELECT kelas, nis, nama 
+                    FROM master_siswa
+                    WHERE nis NOT IN ({placeholders})
+                    ORDER BY kelas, nama
                 """
-        df_belum = pd.read_sql(
-            query_belum, conn, params=(f"%{grade_num}%", pilih_mapel)
-        )
+        df_belum = pd.read_sql(query_belum, conn, params=matched_nis)
       else:
-        query_belum = """
-                    SELECT m.kelas, m.nis, m.nama 
-                    FROM master_siswa m
-                    WHERE m.nis NOT IN (
-                        SELECT h.nis FROM hasil_ujian h WHERE h.nama_tes = ?
-                    )
-                    ORDER BY m.kelas, m.nama
-                """
-        df_belum = pd.read_sql(query_belum, conn, params=(pilih_mapel,))
+        df_belum = pd.read_sql(
+            "SELECT kelas, nis, nama FROM master_siswa ORDER BY kelas, nama",
+            conn,
+        )
 
       if df_belum.empty:
         st.info("Hebat! Semua siswa sudah mengikuti ujian untuk mata pelajaran ini.")
