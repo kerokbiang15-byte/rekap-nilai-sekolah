@@ -216,7 +216,6 @@ else:
                   else str(row[kelas_c]).strip()
               )
 
-              # Cek apakah siswa ini terdaftar di remedial/susulan (fleksibel terhadap nama tes)
               cursor.execute(
                   "SELECT id FROM remedial_siswa WHERE nis = ? AND (nama_tes ="
                   " ? OR ? LIKE '%' || nama_tes || '%' OR nama_tes LIKE '%' ||"
@@ -500,7 +499,7 @@ else:
           st.warning("Semua data hasil ujian dikosongkan!")
           st.rerun()
       with col_r2:
-        if st.button("⚠️ Kosongkan SEMUA Data Master"):
+        if st.button("⚠️️ Kosongkan SEMUA Data Master"):
           cursor = conn.cursor()
           cursor.execute("DELETE FROM master_siswa")
           conn.commit()
@@ -744,10 +743,56 @@ else:
       if df_belum.empty:
         st.info("Hebat! Semua siswa sudah mengikuti ujian untuk mata pelajaran ini.")
       else:
-        st.warning(
-            f"Ditemukan {len(df_belum)} siswa yang belum mengikuti ujian."
+        list_kelas_belum = df_belum["kelas"].unique().tolist()
+
+        select_all_kls_blm = st.checkbox(
+            "Pilih Semua Kelas", value=True, key="select_all_kls_blm_chk"
         )
-        st.dataframe(df_belum, use_container_width=True)
+        if select_all_kls_blm:
+          pilih_kelas_blm = st.multiselect(
+              "Pilih Kelas:",
+              list_kelas_belum,
+              default=list_kelas_belum,
+              key="multiselect_kelas_blm",
+          )
+        else:
+          pilih_kelas_blm = st.multiselect(
+              "Pilih Kelas:",
+              list_kelas_belum,
+              key="multiselect_kelas_blm",
+          )
+
+        if pilih_kelas_blm:
+          df_filtered_belum = df_belum[df_belum["kelas"].isin(pilih_kelas_blm)]
+        else:
+          df_filtered_belum = pd.DataFrame(columns=df_belum.columns)
+
+        if df_filtered_belum.empty:
+          st.info("Tidak ada siswa belum ujian untuk kelas yang dipilih.")
+        else:
+          st.warning(
+              f"Ditemukan {len(df_filtered_belum)} siswa yang belum mengikuti"
+              " ujian."
+          )
+          st.dataframe(df_filtered_belum, use_container_width=True)
+
+          output_blm = io.BytesIO()
+          with pd.ExcelWriter(output_blm, engine="openpyxl") as writer:
+            df_filtered_belum.to_excel(
+                writer, sheet_name="Siswa Belum Ujian", index=False
+            )
+          output_blm.seek(0)
+
+          st.download_button(
+              label="📥 Download Daftar Siswa Belum Ujian ke Excel",
+              data=output_blm,
+              file_name=(
+                  f"Siswa_Belum_Ujian_{pilih_mapel.replace('/', '-')}.xlsx"
+              ),
+              mime=(
+                  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              ),
+          )
 
   # --- MENU 4: CEK & DOWNLOAD PESERTA REMEDIAL ---
   elif menu == "4. Cek & Download Peserta Remedial":
