@@ -31,7 +31,6 @@ def init_db():
             status TEXT DEFAULT 'normal'
         )
     """)
-  # Pastikan kolom status ada (migrasi otomatis jika database sudah ada sebelumnya)
   cursor.execute("PRAGMA table_info(hasil_ujian)")
   columns = [info[1] for info in cursor.fetchall()]
   if "status" not in columns:
@@ -346,7 +345,7 @@ else:
             st.warning("Pilih minimal satu mata pelajaran ujian.")
 
       st.markdown("---")
-      st.markdown("##### 🗑️️ Hapus Data Remedial")
+      st.markdown("##### 🗑️ Hapus Data Remedial")
       df_mapel_rem_del = pd.read_sql(
           "SELECT DISTINCT nama_tes FROM remedial_siswa", conn
       )
@@ -627,7 +626,7 @@ else:
         )
         st.dataframe(df_belum, use_container_width=True)
 
-  # --- MENU 4: CEK & DOWNLOAD PESERTA REMEDIAL ---
+  # --- MENU 4: CEK & DOWNLOAD PESERTA REMEDIAL (DENGAN SELECT ALL MATA PELAJARAN) ---
   elif menu == "4. Cek & Download Peserta Remedial":
     st.header("Pelacak & Rekap Peserta Didik Remedial")
 
@@ -637,71 +636,86 @@ else:
     if df_mapel_rem.empty:
       st.warning("Belum ada data remedial yang di-upload oleh operator.")
     else:
-      pilih_mapel_rem = st.selectbox(
-          "Pilih Mata Pelajaran Remedial:", df_mapel_rem["nama_tes"].tolist()
-      )
+      list_mapel_rem = df_mapel_rem["nama_tes"].tolist()
 
-      df_kelas_rem = pd.read_sql(
-          "SELECT DISTINCT kelas FROM remedial_siswa WHERE nama_tes = ?",
-          conn,
-          params=(pilih_mapel_rem,),
+      # Fitur Select All Mata Pelajaran Remedial
+      select_all_mapel_rem = st.checkbox(
+          "Pilih Semua Mata Pelajaran Remedial", key="select_all_mapel_rem_chk"
       )
-      list_kelas_rem = df_kelas_rem["kelas"].tolist()
-
-      select_all_rem = st.checkbox(
-          "Pilih Semua Kelas Remedial", key="select_all_rem_chk"
-      )
-      if select_all_rem:
-        pilih_kelas_rem = st.multiselect(
-            "Pilih Kelas untuk melihat/download daftar remedial:",
-            list_kelas_rem,
-            default=list_kelas_rem,
-            key="multiselect_kelas_rem",
+      if select_all_mapel_rem:
+        pilih_mapel_rem = st.multiselect(
+            "Pilih Mata Pelajaran Remedial:",
+            list_mapel_rem,
+            default=list_mapel_rem,
+            key="multiselect_mapel_rem",
         )
       else:
-        pilih_kelas_rem = st.multiselect(
-            "Pilih Kelas untuk melihat/download daftar remedial:",
-            list_kelas_rem,
-            key="multiselect_kelas_rem",
+        pilih_mapel_rem = st.multiselect(
+            "Pilih Mata Pelajaran Remedial:",
+            list_mapel_rem,
+            key="multiselect_mapel_rem",
         )
 
-      if pilih_kelas_rem:
-        placeholders = ",".join(["?"] * len(pilih_kelas_rem))
-        query_r = f"""
-                SELECT kelas, nis, nama 
+      if pilih_mapel_rem:
+        # Ambil list kelas berdasarkan mapel yang dipilih
+        placeholders_m = ",".join(["?"] * len(pilih_mapel_rem))
+        df_kelas_rem = pd.read_sql(
+            f"""
+                SELECT DISTINCT kelas 
                 FROM remedial_siswa 
-                WHERE nama_tes = ? AND kelas IN ({placeholders})
-                ORDER BY kelas, nama
-            """
-        params = [pilih_mapel_rem] + pilih_kelas_rem
-        df_hasil_rem = pd.read_sql(query_r, conn, params=params)
+                WHERE nama_tes IN ({placeholders_m})
+            """,
+            conn,
+            params=pilih_mapel_rem,
+        )
+        list_kelas_rem = df_kelas_rem["kelas"].tolist()
 
-        if df_hasil_rem.empty:
-          st.info(
-              "Tidak ada peserta remedial untuk kelas yang dipilih pada mata"
-              " pelajaran ini."
+        select_all_kls_rem = st.checkbox(
+            "Pilih Semua Kelas Remedial", key="select_all_kls_rem_chk"
+        )
+        if select_all_kls_rem:
+          pilih_kelas_rem = st.multiselect(
+              "Pilih Kelas:",
+              list_kelas_rem,
+              default=list_kelas_rem,
+              key="multiselect_kelas_rem",
           )
         else:
-          st.warning(
-              f"Ditemukan {len(df_hasil_rem)} siswa yang harus mengikuti"
-              " remedial."
+          pilih_kelas_rem = st.multiselect(
+              "Pilih Kelas:", list_kelas_rem, key="multiselect_kelas_rem"
           )
-          st.dataframe(df_hasil_rem, use_container_width=True)
 
-          output_rem = io.BytesIO()
-          with pd.ExcelWriter(output_rem, engine="openpyxl") as writer:
-            df_hasil_rem.to_excel(
-                writer, sheet_name="Peserta Remedial", index=False
+        if pilih_kelas_rem:
+          placeholders_k = ",".join(["?"] * len(pilih_kelas_rem))
+          query_r = f"""
+                    SELECT nama_tes, kelas, nis, nama 
+                    FROM remedial_siswa 
+                    WHERE nama_tes IN ({placeholders_m}) AND kelas IN ({placeholders_k})
+                    ORDER BY nama_tes, kelas, nama
+                """
+          params = pilih_mapel_rem + pilih_kelas_rem
+          df_hasil_rem = pd.read_sql(query_r, conn, params=params)
+
+          if df_hasil_rem.empty:
+            st.info("Tidak ada data peserta remedial untuk filter yang dipilih.")
+          else:
+            st.warning(
+                f"Ditemukan {len(df_hasil_rem)} data siswa peserta remedial."
             )
-          output_rem.seek(0)
+            st.dataframe(df_hasil_rem, use_container_width=True)
 
-          st.download_button(
-              label="📥 Download Daftar Remedial ke Excel",
-              data=output_rem,
-              file_name=(
-                  f"Daftar_Remedial_{pilih_mapel_rem.replace('/', '-')}.xlsx"
-              ),
-              mime=(
-                  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-              ),
-          )
+            output_rem = io.BytesIO()
+            with pd.ExcelWriter(output_rem, engine="openpyxl") as writer:
+              df_hasil_rem.to_excel(
+                  writer, sheet_name="Peserta Remedial", index=False
+              )
+            output_rem.seek(0)
+
+            st.download_button(
+                label="📥 Download Daftar Remedial ke Excel",
+                data=output_rem,
+                file_name="Daftar_Remedial_Pilihan.xlsx",
+                mime=(
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                ),
+            )
