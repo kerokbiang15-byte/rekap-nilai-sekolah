@@ -482,7 +482,6 @@ else:
               bottom=Side(style="thin", color="000000"),
           )
 
-          # Ambil data status dan nilai mentah untuk pengecekan font hijau di excel
           df_n_mapel_all = pd.read_sql(
               "SELECT nis, status FROM hasil_ujian WHERE nama_tes = ?",
               conn,
@@ -517,7 +516,6 @@ else:
               cell.alignment = Alignment(horizontal="center", vertical="center")
               cell.border = thin_border
 
-            # Ambil master siswa kelas ini untuk mencocokkan NIS asli dengan statusnya
             df_m_kls_full = pd.read_sql(
                 "SELECT nis FROM master_siswa WHERE kelas = ?",
                 conn,
@@ -535,8 +533,7 @@ else:
               c_nama = ws.cell(row=row_num, column=2, value=r_data["NAMA"])
               c_nilai = ws.cell(row=row_num, column=3, value=r_data["NILAI PG"])
 
-              # Cek apakah siswa ini statusnya remedial -> cetak warna hijau
-              nis_ s = dict_nis_by_idx.get(r_idx, "")
+              nis_s = dict_nis_by_idx.get(r_idx, "")
               is_remed = dict_status.get(nis_s) == "remedial"
 
               if is_remed:
@@ -643,7 +640,6 @@ else:
       )
       list_kelas_rem = df_kelas_rem["kelas"].tolist()
 
-      # Fitur Select All Kelas
       select_all_rem = st.checkbox(
           "Pilih Semua Kelas Remedial", key="select_all_rem_chk"
       )
@@ -684,7 +680,6 @@ else:
           )
           st.dataframe(df_hasil_rem, use_container_width=True)
 
-          # Tombol Download Excel Daftar Remedial
           output_rem = io.BytesIO()
           with pd.ExcelWriter(output_rem, engine="openpyxl") as writer:
             df_hasil_rem.to_excel(
