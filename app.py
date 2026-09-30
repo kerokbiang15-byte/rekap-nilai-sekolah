@@ -626,7 +626,7 @@ else:
         )
         st.dataframe(df_belum, use_container_width=True)
 
-  # --- MENU 4: CEK & DOWNLOAD PESERTA REMEDIAL (DENGAN SELECT ALL MATA PELAJARAN) ---
+  # --- MENU 4: CEK & DOWNLOAD PESERTA REMEDIAL ---
   elif menu == "4. Cek & Download Peserta Remedial":
     st.header("Pelacak & Rekap Peserta Didik Remedial")
 
@@ -638,26 +638,14 @@ else:
     else:
       list_mapel_rem = df_mapel_rem["nama_tes"].tolist()
 
-      # Fitur Select All Mata Pelajaran Remedial
-      select_all_mapel_rem = st.checkbox(
-          "Pilih Semua Mata Pelajaran Remedial", key="select_all_mapel_rem_chk"
+      # Multiselect Mata Pelajaran Remedial tanpa checkbox "Pilih Semua"
+      pilih_mapel_rem = st.multiselect(
+          "Pilih Mata Pelajaran Remedial:",
+          list_mapel_rem,
+          key="multiselect_mapel_rem",
       )
-      if select_all_mapel_rem:
-        pilih_mapel_rem = st.multiselect(
-            "Pilih Mata Pelajaran Remedial:",
-            list_mapel_rem,
-            default=list_mapel_rem,
-            key="multiselect_mapel_rem",
-        )
-      else:
-        pilih_mapel_rem = st.multiselect(
-            "Pilih Mata Pelajaran Remedial:",
-            list_mapel_rem,
-            key="multiselect_mapel_rem",
-        )
 
       if pilih_mapel_rem:
-        # Ambil list kelas berdasarkan mapel yang dipilih
         placeholders_m = ",".join(["?"] * len(pilih_mapel_rem))
         df_kelas_rem = pd.read_sql(
             f"""
@@ -670,6 +658,7 @@ else:
         )
         list_kelas_rem = df_kelas_rem["kelas"].tolist()
 
+        # Listdown kelas dimunculkan kembali di sini
         select_all_kls_rem = st.checkbox(
             "Pilih Semua Kelas Remedial", key="select_all_kls_rem_chk"
         )
