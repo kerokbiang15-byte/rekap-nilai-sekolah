@@ -189,6 +189,14 @@ else:
 
     with tab_up2:
       st.subheader("2. Upload Hasil Ujian CBT (Utama / Susulan)")
+      jenis_upload = st.radio(
+          "Pilih Jenis Upload File Ujian:",
+          [
+              "Ujian Utama CBT (Normal)",
+              "Ujian Susulan / Susulan & Remedial",
+          ],
+      )
+
       file_ujian = st.file_uploader(
           "Pilih file Hasil Ujian", type=["xlsx", "csv"], key="ujian"
       )
@@ -227,39 +235,30 @@ else:
               kelas_val = res_m[0] if res_m else str(row[kelas_c]).strip()
               nama_val = res_m[1] if res_m else str(row[nama_c]).strip()
 
-              cursor.execute(
-                  "SELECT id, nama_tes, status FROM hasil_ujian WHERE nis = ?",
-                  (nis_val,),
-              )
-              existing_exams = cursor.fetchall()
-              had_previous_score = False
-              for _, ex_tes, _ in existing_exams:
-                if clean_tes_name(ex_tes) == clean_upload_tes:
-                  had_previous_score = True
-                  break
-
-              cursor.execute(
-                  "SELECT nama_tes FROM remedial_siswa WHERE nis = ?",
-                  (nis_val,),
-              )
-              all_rem = cursor.fetchall()
-              is_remedial_candidate = False
-              for (r_tes,) in all_rem:
-                clean_r_tes = clean_tes_name(r_tes)
-                if (
-                    clean_r_tes == clean_upload_tes
-                    or clean_r_tes in clean_upload_tes
-                    or clean_upload_tes in clean_r_tes
-                ):
-                  is_remedial_candidate = True
-                  break
-
-              if is_remedial_candidate:
-                status_ujian = "remedial"
-              elif not had_previous_score:
-                status_ujian = "susulan"
-              else:
+              if "Utama" in jenis_upload:
                 status_ujian = "normal"
+              else:
+                # Cek apakah siswa terdaftar di remedial
+                cursor.execute(
+                    "SELECT nama_tes FROM remedial_siswa WHERE nis = ?",
+                    (nis_val,),
+                )
+                all_rem = cursor.fetchall()
+                is_remedial = False
+                for (r_tes,) in all_rem:
+                  clean_r_tes = clean_tes_name(r_tes)
+                  if (
+                      clean_r_tes == clean_upload_tes
+                      or clean_r_tes in clean_upload_tes
+                      or clean_upload_tes in clean_r_tes
+                  ):
+                    is_remedial = True
+                    break
+
+                if is_remedial:
+                  status_ujian = "remedial"
+                else:
+                  status_ujian = "susulan"
 
               cursor.execute(
                   """
@@ -279,7 +278,7 @@ else:
             st.success("Data Hasil Ujian berhasil di-upload dan disimpan!")
 
     with tab_up3:
-      st.subheader("3. Upload Data Siswa Remedial / Susulan dari Guru")
+      st.subheader("3. Upload Data Siswa Remedial dari Guru")
       file_rem = st.file_uploader(
           "Pilih file Data Remedial", type=["xlsx", "csv"], key="remedial_file"
       )
@@ -380,7 +379,7 @@ else:
     with tab_up5:
       st.subheader("5. Kelola & Hapus Data di Database (Multiple Choice & Edit)")
 
-      st.markdown("##### 🗑️️ Hapus Data Hasil Ujian (Berdasarkan Mata Pelajaran)")
+      st.markdown("##### 🗑️ Hapus Data Hasil Ujian (Berdasarkan Mata Pelajaran)")
       df_mapel_del = pd.read_sql(
           "SELECT DISTINCT nama_tes FROM hasil_ujian", conn
       )
@@ -435,7 +434,7 @@ else:
             key="edit_kelas_multiselect",
         )
         if st.button(
-            "🗑️ Hapus Kelas Terpilih dari Ujian Ini", type="primary"
+            "🗑️️ Hapus Kelas Terpilih dari Ujian Ini", type="primary"
         ):
           if pilih_kelas_hapus_list:
             cursor = conn.cursor()
