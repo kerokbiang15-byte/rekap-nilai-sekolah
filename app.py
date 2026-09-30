@@ -316,7 +316,7 @@ else:
     with tab_up5:
       st.subheader("5. Kelola & Hapus Data di Database (Multiple Choice)")
 
-      st.markdown("##### 🗑️ Hapus Data Hasil Ujian (Berdasarkan Mata Pelajaran)")
+      st.markdown("##### 🗑️️ Hapus Data Hasil Ujian")
       df_mapel_del = pd.read_sql(
           "SELECT DISTINCT nama_tes FROM hasil_ujian", conn
       )
@@ -343,51 +343,6 @@ else:
             st.rerun()
           else:
             st.warning("Pilih minimal satu mata pelajaran ujian.")
-
-      st.markdown("---")
-      st.markdown(
-          "##### 🗑️ Hapus Data Ujian Berdasarkan Kelas Tertentu (Fitur Edit"
-          " Kelas)"
-      )
-      if df_mapel_del.empty:
-        st.info("Belum ada data ujian.")
-      else:
-        pilih_tes_edit_kelas = st.selectbox(
-            "Pilih Mata Pelajaran untuk Edit/Hapus Kelas:",
-            df_mapel_del["nama_tes"].tolist(),
-            key="edit_kelas_tes_sel",
-        )
-        df_kelas_edit = pd.read_sql(
-            "SELECT DISTINCT kelas FROM hasil_ujian WHERE nama_tes = ?",
-            conn,
-            params=(pilih_tes_edit_kelas,),
-        )
-        list_kelas_edit = df_kelas_edit["kelas"].tolist()
-
-        pilih_kelas_hapus_list = st.multiselect(
-            f"Pilih Kelas pada '{pilih_tes_edit_kelas}' yang ingin dihapus"
-            " datanya:",
-            list_kelas_edit,
-            key="edit_kelas_multiselect",
-        )
-        if st.button(
-            "🗑️ Hapus Kelas Terpilih dari Ujian Ini", type="primary"
-        ):
-          if pilih_kelas_hapus_list:
-            cursor = conn.cursor()
-            for kls in pilih_kelas_hapus_list:
-              cursor.execute(
-                  "DELETE FROM hasil_ujian WHERE nama_tes = ? AND kelas = ?",
-                  (pilih_tes_edit_kelas, kls),
-              )
-            conn.commit()
-            st.success(
-                "Data kelas yang dipilih berhasil dihapus dari mata pelajaran"
-                f" '{pilih_tes_edit_kelas}'!"
-            )
-            st.rerun()
-          else:
-            st.warning("Pilih minimal satu kelas yang ingin dihapus.")
 
       st.markdown("---")
       st.markdown("##### 🗑️ Hapus Data Remedial")
@@ -688,34 +643,30 @@ else:
       list_mapel_rem = df_mapel_rem["nama_tes"].tolist()
       list_kelas_rem = df_kelas_rem["kelas"].tolist()
 
+      # Multiselect Mata Pelajaran
       pilih_mapel_rem = st.multiselect(
           "Pilih Mata Pelajaran Remedial:",
           list_mapel_rem,
           key="multiselect_mapel_rem",
       )
 
-      # Callback aman untuk Select All Kelas tanpa membuat loading/infinite loop
-      if "multiselect_kelas_rem" not in st.session_state:
-        st.session_state.multiselect_kelas_rem = []
-
-
-      def toggle_all_kelas():
-        if st.session_state.get("select_all_kls_rem_chk", False):
-          st.session_state.multiselect_kelas_rem = list_kelas_rem
-        else:
-          st.session_state.multiselect_kelas_rem = []
-
-
-      st.checkbox(
-          "Pilih Semua Kelas Remedial",
-          key="select_all_kls_rem_chk",
-          on_change=toggle_all_kelas,
+      # Listdown Kelas dimunculkan langsung tanpa syarat harus pilih mapel dulu
+      select_all_kls_rem = st.checkbox(
+          "Pilih Semua Kelas Remedial", key="select_all_kls_rem_chk"
       )
+      if select_all_kls_rem:
+        pilih_kelas_rem = st.multiselect(
+            "Pilih Kelas:",
+            list_kelas_rem,
+            default=list_kelas_rem,
+            key="multiselect_kelas_rem",
+        )
+      else:
+        pilih_kelas_rem = st.multiselect(
+            "Pilih Kelas:", list_kelas_rem, key="multiselect_kelas_rem"
+        )
 
-      pilih_kelas_rem = st.multiselect(
-          "Pilih Kelas:", list_kelas_rem, key="multiselect_kelas_rem"
-      )
-
+      # Tampilkan data jika salah satu atau keduanya dipilih
       if pilih_mapel_rem or pilih_kelas_rem:
         query_r = "SELECT nama_tes, kelas, nis, nama FROM remedial_siswa WHERE 1=1"
         params = []
