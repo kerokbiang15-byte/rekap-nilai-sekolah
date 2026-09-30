@@ -204,7 +204,6 @@ else:
           if st.button("Simpan Hasil Ujian ke Database"):
             cursor = conn.cursor()
             for _, row in df_u.iterrows():
-              # Sinkronisasi kelas otomatis dengan master siswa berdasarkan NIS
               nis_val = str(row[nis_c]).strip()
               cursor.execute(
                   "SELECT kelas FROM master_siswa WHERE nis = ?", (nis_val,)
@@ -216,22 +215,32 @@ else:
                   else str(row[kelas_c]).strip()
               )
 
+              # Cek apakah siswa ini sebelumnya tercatat belum ujian (masuk daftar susulan)
+              # Jika ada di tabel remedial/susulan, tandai sebagai 'susulan'
+              cursor.execute(
+                  "SELECT id FROM remedial_siswa WHERE nis = ? AND nama_tes = ?",
+                  (nis_val, str(row[tes_c]).strip()),
+              )
+              is_susulan = cursor.fetchone()
+              status_ujian = "susulan" if is_susulan else "normal"
+
               cursor.execute(
                   "INSERT INTO hasil_ujian (nama_tes, nis, nama, kelas, poin,"
-                  " status) VALUES (?, ?, ?, ?, ?, 'normal')",
+                  " status) VALUES (?, ?, ?, ?, ?, ?)",
                   (
                       str(row[tes_c]).strip(),
                       nis_val,
                       str(row[nama_c]).strip(),
                       kelas_val,
                       float(row[poin_c]),
+                      status_ujian,
                   ),
               )
             conn.commit()
             st.success("Data Hasil Ujian berhasil di-upload dan masuk database!")
 
     with tab_up3:
-      st.subheader("3. Upload Data Siswa Remedial (Wali Kelas)")
+      st.subheader("3. Upload Data Siswa Remedial / Susulan")
       st.markdown(
           "Format kolom: `Nama Tes`, `Username` (NIS), `Nama`, `Group` (Kelas)"
       )
@@ -263,7 +272,6 @@ else:
             cursor = conn.cursor()
             for _, row in df_r.iterrows():
               nis_val = str(row[nis_rc]).strip()
-              # Ambil data kelas dan nama lengkap langsung dari master siswa berdasarkan NIS jika kosong/tidak lengkap
               cursor.execute(
                   "SELECT kelas, nama FROM master_siswa WHERE nis = ?",
                   (nis_val,),
@@ -349,7 +357,7 @@ else:
             )
 
     with tab_up5:
-      st.subheader("5. Kelola & Hapus Data di Database (Multiple Choice)")
+      st.subheader("5. Kelola & Hapus Data di Database (Multiple Choice & Edit)")
 
       st.markdown("##### 🗑️ Hapus Data Hasil Ujian (Berdasarkan Mata Pelajaran)")
       df_mapel_del = pd.read_sql(
@@ -425,33 +433,60 @@ else:
             st.warning("Pilih minimal satu kelas yang ingin dihapus.")
 
       st.markdown("---")
-      st.markdown("##### 🗑️ Hapus Data Remedial")
+      st.markdown(
+          "##### 🗑️ Hapus Peserta Remedial / Susulan Secara Spesifik (Fitur"
+          " Edit Siswa)"
+      )
       df_mapel_rem_del = pd.read_sql(
           "SELECT DISTINCT nama_tes FROM remedial_siswa", conn
       )
       if df_mapel_rem_del.empty:
-        st.info("Belum ada data remedial di dalam database.")
+        st.info("Belum ada data remedial/susulan di dalam database.")
       else:
-        pilih_hapus_rem_list = st.multiselect(
-            "Pilih Mata Pelajaran Remedial yang ingin dihapus:",
+        pilih_tes_rem_edit = st.selectbox(
+            "Pilih Mata Pelajaran Remedial untuk Edit/Hapus Peserta:",
             df_mapel_rem_del["nama_tes"].tolist(),
-            key="del_remedial_multiselect",
+            key="edit_rem_tes_sel",
         )
-        if st.button("🗑️ Hapus Data Remedial yang Dipilih", type="primary"):
-          if pilih_hapus_rem_list:
-            cursor = conn.cursor()
-            for tes in pilih_hapus_rem_list:
-              cursor.execute(
-                  "DELETE FROM remedial_siswa WHERE nama_tes = ?", (tes,)
+        df_rem_siswa_list = pd.read_sql(
+            "SELECT id, nis, nama, kelas FROM remedial_siswa WHERE nama_tes = ?"
+            " ORDER BY kelas, nama",
+            conn,
+            params=(pilih_tes_rem_edit,),
+        )
+
+        if df_rem_siswa_list.empty:
+          st.info(
+              "Tidak ada data peserta remedial untuk mata pelajaran ini."
+          )
+        else:
+          st.dataframe(df_rem_siswa_list, use_container_width=True)
+          pilih_id_hapus = st.multiselect(
+              "Pilih ID atau Nama Siswa yang ingin dihapus dari daftar"
+              " remedial:",
+              options=df_rem_siswa_list["id"].tolist(),
+              format_func=lambda x: f"ID {x} - "
+              + f"{df_rem_siswa_list.loc[df_rem_siswa_list['id'] == x, 'nama'].values[0]}"
+              + f" ({df_rem_siswa_list.loc[df_rem_siswa_list['id'] == x, 'kelas'].values[0]})",
+              key="multiselect_id_hapus_rem",
+          )
+          if st.button(
+              "🗑️ Hapus Siswa Terpilih dari Daftar Remedial", type="primary"
+          ):
+            if pilih_id_hapus:
+              cursor = conn.cursor()
+              for sid in pilih_id_hapus:
+                cursor.execute(
+                    "DELETE FROM remedial_siswa WHERE id = ?", (sid,)
+                )
+              conn.commit()
+              st.success(
+                  "Peserta remedial yang dipilih berhasil dihapus dari"
+                  " database!"
               )
-            conn.commit()
-            st.success(
-                "Data remedial untuk mata pelajaran yang dipilih berhasil"
-                " dihapus!"
-            )
-            st.rerun()
-          else:
-            st.warning("Pilih minimal satu mata pelajaran remedial.")
+              st.rerun()
+            else:
+              st.warning("Pilih minimal satu siswa yang ingin dihapus.")
 
       st.markdown("---")
       col_r1, col_r2, col_r3 = st.columns(3)
@@ -534,7 +569,13 @@ else:
             nilai_pg = data_n[0]
             status_n = data_n[1]
 
-            ket = "Remedial" if status_n == "remedial" else "-"
+            if status_n == "remedial":
+              ket = "Sudah Remedial"
+            elif status_n == "susulan":
+              ket = "Sudah Susulan"
+            else:
+              ket = "-"
+
             rows.append({
                 "NO": idx,
                 "NAMA": nama_siswa,
@@ -621,9 +662,9 @@ else:
               c_nilai = ws.cell(row=row_num, column=3, value=r_data["NILAI PG"])
 
               nis_s = dict_nis_by_idx.get(r_idx, "")
-              is_remed = dict_status.get(nis_s) == "remedial"
+              status_s = dict_status.get(nis_s)
 
-              if is_remed:
+              if status_s == "remedial":
                 c_nilai.font = Font(
                     name="Calibri", size=11, color="008000", bold=True
                 )
