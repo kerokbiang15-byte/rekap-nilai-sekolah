@@ -168,7 +168,10 @@ else:
         kelas_col = col_map.get("kelas") or col_map.get("group")
 
         if nis_col and nama_col and kelas_col:
-          st.write("Pratinjau Data Master:", df_m.head())
+          st.markdown("**Pratinjau Data Master:**")
+          st.dataframe(
+              df_m.head(), hide_index=True, use_container_width=True
+          )
           if st.button("Simpan Master Siswa ke Database"):
             cursor = conn.cursor()
             for _, row in df_m.iterrows():
@@ -204,7 +207,10 @@ else:
         poin_c = col_map_u.get("poin") or col_map_u.get("nilai")
 
         if tes_c and nis_c and nama_c and kelas_c and poin_c:
-          st.write("Pratinjau Data Ujian:", df_u.head())
+          st.markdown("**Pratinjau Data Ujian:**")
+          st.dataframe(
+              df_u.head(), hide_index=True, use_container_width=True
+          )
           if st.button("Simpan Hasil Ujian ke Database"):
             cursor = conn.cursor()
             for _, row in df_u.iterrows():
@@ -291,7 +297,10 @@ else:
         kelas_rc = col_map_r.get("group") or col_map_r.get("kelas")
 
         if tes_rc and nis_rc and nama_rc:
-          st.write("Pratinjau Data Remedial:", df_r.head())
+          st.markdown("**Pratinjau Data Remedial:**")
+          st.dataframe(
+              df_r.head(), hide_index=True, use_container_width=True
+          )
           if st.button("Simpan Data Remedial ke Database"):
             cursor = conn.cursor()
             for _, row in df_r.iterrows():
@@ -344,7 +353,10 @@ else:
         poin_ur = col_map_ur.get("poin") or col_map_ur.get("nilai")
 
         if tes_ur and nis_ur and poin_ur:
-          st.write("Pratinjau Update Nilai:", df_up_r.head())
+          st.markdown("**Pratinjau Update Nilai:**")
+          st.dataframe(
+              df_up_r.head(), hide_index=True, use_container_width=True
+          )
           if st.button("Perbarui Nilai Remedial"):
             cursor = conn.cursor()
             updated_count = 0
@@ -368,7 +380,7 @@ else:
     with tab_up5:
       st.subheader("5. Kelola & Hapus Data di Database (Multiple Choice & Edit)")
 
-      st.markdown("##### 🗑️ Hapus Data Hasil Ujian (Berdasarkan Mata Pelajaran)")
+      st.markdown("##### 🗑️️ Hapus Data Hasil Ujian (Berdasarkan Mata Pelajaran)")
       df_mapel_del = pd.read_sql(
           "SELECT DISTINCT nama_tes FROM hasil_ujian", conn
       )
@@ -469,7 +481,9 @@ else:
               "Tidak ada data peserta remedial untuk mata pelajaran ini."
           )
         else:
-          st.dataframe(df_rem_siswa_list, use_container_width=True)
+          st.dataframe(
+              df_rem_siswa_list, hide_index=True, use_container_width=True
+          )
           pilih_id_hapus = st.multiselect(
               "Pilih ID atau Nama Siswa yang ingin dihapus dari daftar"
               " remedial:",
@@ -597,7 +611,9 @@ else:
           if df_preview.empty:
             st.info(f"Tidak ada data siswa untuk kelas {kelas}.")
           else:
-            st.dataframe(df_preview, use_container_width=True, hide_index=True)
+            st.dataframe(
+                df_preview, hide_index=True, use_container_width=True
+            )
 
           preview_data[kelas] = df_preview
 
@@ -777,7 +793,9 @@ else:
               f"Ditemukan {len(df_filtered_belum)} siswa yang belum mengikuti"
               " ujian."
           )
-          st.dataframe(df_filtered_belum, use_container_width=True)
+          st.dataframe(
+              df_filtered_belum, hide_index=True, use_container_width=True
+          )
 
           output_blm = io.BytesIO()
           with pd.ExcelWriter(output_blm, engine="openpyxl") as writer:
@@ -864,7 +882,9 @@ else:
           st.warning(
               f"Ditemukan {len(df_hasil_rem)} data siswa peserta remedial."
           )
-          st.dataframe(df_hasil_rem, use_container_width=True)
+          st.dataframe(
+              df_hasil_rem, hide_index=True, use_container_width=True
+          )
 
           output_rem = io.BytesIO()
           with pd.ExcelWriter(output_rem, engine="openpyxl") as writer:
