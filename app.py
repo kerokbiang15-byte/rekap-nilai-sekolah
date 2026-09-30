@@ -83,7 +83,6 @@ if "logged_in" not in st.session_state:
   st.session_state.logged_in = False
   st.session_state.role = None
 
-# Jika belum login, tampilkan halaman login
 if not st.session_state.logged_in:
   st.title("🔐 Silakan Login ke Sistem")
   st.markdown("Masukkan akun akses sesuai peran Anda.")
@@ -108,7 +107,6 @@ if not st.session_state.logged_in:
         st.error("Username atau Password salah!")
 
 else:
-  # Jika sudah login, tampilkan aplikasi utama
   st.sidebar.write(
       f"👤 Login sebagai: **{st.session_state.role.upper()}**"
   )
@@ -120,7 +118,6 @@ else:
   st.title("APLIKASI REKAP NILAI UJIAN")
   st.markdown("---")
 
-  # Atur menu berdasarkan role
   if st.session_state.role == "admin":
     menu = st.sidebar.selectbox(
         "Pilih Menu:",
@@ -141,7 +138,7 @@ else:
         ],
     )
 
-  # --- MENU 1: OPERATOR UPLOAD & KELOLA (Hanya Admin) ---
+  # --- MENU 1: OPERATOR UPLOAD & KELOLA ---
   if menu == "1. Operator: Upload & Kelola Data":
     st.header("Panel Operator: Upload & Kelola Database")
 
@@ -150,33 +147,27 @@ else:
         "Upload Hasil Ujian CBT",
         "Upload Data Remedial",
         "Upload Update Nilai Remedial",
-        "Kelola / Hapus Data",
+        "Kelola / Hapus Data & Debug",
     ])
 
     with tab_up1:
       st.subheader("1. Upload Data Master Siswa (Excel/CSV)")
-      st.markdown("Pastikan file memiliki kolom: `NIS`, `Nama`, `Kelas`")
       file_master = st.file_uploader(
           "Pilih file Master Siswa", type=["xlsx", "csv"], key="master"
       )
       if file_master:
-        if file_master.name.endswith(".csv"):
-          df_m = pd.read_csv(file_master)
-        else:
-          df_m = pd.read_excel(file_master)
-
+        df_m = (
+            pd.read_csv(file_master)
+            if file_master.name.endswith(".csv")
+            else pd.read_excel(file_master)
+        )
         df_m.columns = [str(col).strip() for col in df_m.columns]
         col_map = {c.lower(): c for c in df_m.columns}
-
         nis_col = col_map.get("nis") or col_map.get("no induk")
         nama_col = col_map.get("nama") or col_map.get("nama lengkap")
         kelas_col = col_map.get("kelas") or col_map.get("group")
 
-        if not nis_col or not nama_col or not kelas_col:
-          st.error(
-              f"Kolom tidak lengkap! Kolom terbaca: {list(df_m.columns)}"
-          )
-        else:
+        if nis_col and nama_col and kelas_col:
           st.write("Pratinjau Data Master:", df_m.head())
           if st.button("Simpan Master Siswa ke Database"):
             cursor = conn.cursor()
@@ -191,37 +182,28 @@ else:
                   ),
               )
             conn.commit()
-            st.success("Data Master Siswa berhasil disimpan ke database!")
+            st.success("Data Master Siswa berhasil disimpan!")
 
     with tab_up2:
       st.subheader("2. Upload Hasil Ujian Mentah dari CBT")
-      st.markdown(
-          "Format standar CBT: `Nama Tes`, `Username` (NIS), `Nama`, `Group`"
-          " (Kelas), `Poin`"
-      )
       file_ujian = st.file_uploader(
           "Pilih file Hasil Ujian", type=["xlsx", "csv"], key="ujian"
       )
       if file_ujian:
-        if file_ujian.name.endswith(".csv"):
-          df_u = pd.read_csv(file_ujian)
-        else:
-          df_u = pd.read_excel(file_ujian)
-
+        df_u = (
+            pd.read_csv(file_ujian)
+            if file_ujian.name.endswith(".csv")
+            else pd.read_excel(file_ujian)
+        )
         df_u.columns = [str(col).strip() for col in df_u.columns]
         col_map_u = {c.lower(): c for c in df_u.columns}
-
         tes_c = col_map_u.get("nama tes") or col_map_u.get("namates")
         nis_c = col_map_u.get("username") or col_map_u.get("nis")
         nama_c = col_map_u.get("nama")
         kelas_c = col_map_u.get("group") or col_map_u.get("kelas")
         poin_c = col_map_u.get("poin") or col_map_u.get("nilai")
 
-        if not tes_c or not nis_c or not nama_c or not kelas_c or not poin_c:
-          st.error(
-              f"Kolom file ujian tidak sesuai! Kolom terbaca: {list(df_u.columns)}"
-          )
-        else:
+        if tes_c and nis_c and nama_c and kelas_c and poin_c:
           st.write("Pratinjau Data Ujian:", df_u.head())
           if st.button("Simpan Hasil Ujian ke Database"):
             cursor = conn.cursor()
@@ -231,17 +213,20 @@ else:
               clean_upload_tes = clean_tes_name(nama_tes_val)
               poin_val = parse_poin(row[poin_c])
 
+              # Ambil kelas dan nama valid dari master siswa berdasarkan NIS
               cursor.execute(
-                  "SELECT kelas FROM master_siswa WHERE nis = ?", (nis_val,)
+                  "SELECT kelas, nama FROM master_siswa WHERE nis = ?",
+                  (nis_val,),
               )
               res_m = cursor.fetchone()
-              kelas_val = (
-                  res_m[0]
-                  if res_m
-                  else str(row[kelas_c]).strip()
-              )
+              if res_m:
+                kelas_val = res_m[0]
+                nama_val = res_m[1]
+              else:
+                kelas_val = str(row[kelas_c]).strip()
+                nama_val = str(row[nama_c]).strip()
 
-              # Cek apakah siswa ini terdaftar di remedial/susulan secara fleksibel
+              # Cek apakah siswa terdaftar sebagai susulan/remedial
               cursor.execute(
                   "SELECT nama_tes FROM remedial_siswa WHERE nis = ?",
                   (nis_val,),
@@ -266,43 +251,36 @@ else:
                   (
                       nama_tes_val,
                       nis_val,
-                      str(row[nama_c]).strip(),
+                      nama_val,
                       kelas_val,
                       poin_val,
                       status_ujian,
                   ),
               )
             conn.commit()
-            st.success("Data Hasil Ujian berhasil di-upload dan masuk database!")
+            st.success(
+                "Data Hasil Ujian berhasil di-upload dan tersimpan di database!"
+            )
 
     with tab_up3:
       st.subheader("3. Upload Data Siswa Remedial / Susulan")
-      st.markdown(
-          "Format kolom: `Nama Tes`, `Username` (NIS), `Nama`, `Group` (Kelas)"
-      )
       file_rem = st.file_uploader(
           "Pilih file Data Remedial", type=["xlsx", "csv"], key="remedial_file"
       )
       if file_rem:
-        if file_rem.name.endswith(".csv"):
-          df_r = pd.read_csv(file_rem)
-        else:
-          df_r = pd.read_excel(file_rem)
-
+        df_r = (
+            pd.read_csv(file_rem)
+            if file_rem.name.endswith(".csv")
+            else pd.read_excel(file_rem)
+        )
         df_r.columns = [str(col).strip() for col in df_r.columns]
         col_map_r = {c.lower(): c for c in df_r.columns}
-
         tes_rc = col_map_r.get("nama tes") or col_map_r.get("namates")
         nis_rc = col_map_r.get("username") or col_map_r.get("nis")
         nama_rc = col_map_r.get("nama")
         kelas_rc = col_map_r.get("group") or col_map_r.get("kelas")
 
-        if not tes_rc or not nis_rc or not nama_rc:
-          st.error(
-              f"Kolom file remedial tidak sesuai! Kolom terbaca:"
-              f" {list(df_r.columns)}"
-          )
-        else:
+        if tes_rc and nis_rc and nama_rc:
           st.write("Pratinjau Data Remedial:", df_r.head())
           if st.button("Simpan Data Remedial ke Database"):
             cursor = conn.cursor()
@@ -313,10 +291,8 @@ else:
                   (nis_val,),
               )
               res_m = cursor.fetchone()
-
               if res_m:
-                kelas_val = res_m[0]
-                nama_val = res_m[1]
+                kelas_val, nama_val = res_m[0], res_m[1]
               else:
                 kelas_val = (
                     str(row[kelas_rc]).strip()
@@ -336,37 +312,28 @@ else:
                   ),
               )
             conn.commit()
-            st.success("Data Remedial berhasil di-upload ke database!")
+            st.success("Data Remedial/Susulan berhasil disimpan!")
 
     with tab_up4:
       st.subheader("4. Upload Update Nilai Remedial (Perbarui Nilai)")
-      st.markdown(
-          "Format kolom: `Nama Tes`, `Username` (NIS), `Poin` (Nilai Remedial"
-          " Baru)"
-      )
       file_up_rem = st.file_uploader(
           "Pilih file Update Nilai Remedial",
           type=["xlsx", "csv"],
           key="up_rem_score",
       )
       if file_up_rem:
-        if file_up_rem.name.endswith(".csv"):
-          df_up_r = pd.read_csv(file_up_rem)
-        else:
-          df_up_r = pd.read_excel(file_up_rem)
-
+        df_up_r = (
+            pd.read_csv(file_up_rem)
+            if file_up_rem.name.endswith(".csv")
+            else pd.read_excel(file_up_rem)
+        )
         df_up_r.columns = [str(col).strip() for col in df_up_r.columns]
         col_map_ur = {c.lower(): c for c in df_up_r.columns}
-
         tes_ur = col_map_ur.get("nama tes") or col_map_ur.get("namates")
         nis_ur = col_map_ur.get("username") or col_map_ur.get("nis")
         poin_ur = col_map_ur.get("poin") or col_map_ur.get("nilai")
 
-        if not tes_ur or not nis_ur or not poin_ur:
-          st.error(
-              f"Kolom file tidak sesuai! Kolom terbaca: {list(df_up_r.columns)}"
-          )
-        else:
+        if tes_ur and nis_ur and poin_ur:
           st.write("Pratinjau Update Nilai:", df_up_r.head())
           if st.button("Perbarui Nilai Remedial"):
             cursor = conn.cursor()
@@ -387,167 +354,40 @@ else:
               )
               updated_count += cursor.rowcount
             conn.commit()
-            st.success(
-                f"Berhasil memperbarui {updated_count} nilai siswa remedial!"
-                " Nilai yang diperbarui akan ditandai font hijau saat"
-                " didownload."
-            )
+            st.success(f"Berhasil memperbarui {updated_count} nilai remedial!")
 
     with tab_up5:
-      st.subheader("5. Kelola & Hapus Data di Database (Multiple Choice & Edit)")
-
-      st.markdown("##### 🗑️ Hapus Data Hasil Ujian (Berdasarkan Mata Pelajaran)")
-      df_mapel_del = pd.read_sql(
-          "SELECT DISTINCT nama_tes FROM hasil_ujian", conn
-      )
-      if df_mapel_del.empty:
-        st.info("Belum ada data hasil ujian di dalam database.")
-      else:
-        pilih_hapus_tes_list = st.multiselect(
-            "Pilih Mata Pelajaran Ujian yang ingin dihapus:",
-            df_mapel_del["nama_tes"].tolist(),
-            key="del_ujian_multiselect",
-        )
-        if st.button("🗑️ Hapus Data Ujian yang Dipilih", type="primary"):
-          if pilih_hapus_tes_list:
-            cursor = conn.cursor()
-            for tes in pilih_hapus_tes_list:
-              cursor.execute(
-                  "DELETE FROM hasil_ujian WHERE nama_tes = ?", (tes,)
-              )
-            conn.commit()
-            st.success(
-                "Data ujian untuk mata pelajaran yang dipilih berhasil"
-                " dihapus!"
-            )
-            st.rerun()
-          else:
-            st.warning("Pilih minimal satu mata pelajaran ujian.")
-
-      st.markdown("---")
+      st.subheader("5. Kelola, Hapus & Cek Database (Debug)")
       st.markdown(
-          "##### 🗑️ Hapus Data Ujian Berdasarkan Kelas Tertentu (Fitur Edit"
-          " Kelas)"
+          "##### 🔍 Cek Data Tersimpan Berdasarkan NIS (Cari Siswa Tertentu)"
       )
-      if df_mapel_del.empty:
-        st.info("Belum ada data ujian.")
-      else:
-        pilih_tes_edit_kelas = st.selectbox(
-            "Pilih Mata Pelajaran untuk Edit/Hapus Kelas:",
-            df_mapel_del["nama_tes"].tolist(),
-            key="edit_kelas_tes_sel",
-        )
-        df_kelas_edit = pd.read_sql(
-            "SELECT DISTINCT kelas FROM hasil_ujian WHERE nama_tes = ?",
+      cari_nis = st.text_input(
+          "Masukkan NIS Siswa (Contoh: 2425072177 untuk Abbas):"
+      )
+      if cari_nis:
+        df_cek_hasil = pd.read_sql(
+            "SELECT * FROM hasil_ujian WHERE nis = ?",
             conn,
-            params=(pilih_tes_edit_kelas,),
+            params=(cari_nis.strip(),),
         )
-        list_kelas_edit = df_kelas_edit["kelas"].tolist()
+        st.write("**Hasil Ujian Terdaftar untuk NIS tersebut:**")
+        st.dataframe(df_cek_hasil, use_container_width=True)
 
-        pilih_kelas_hapus_list = st.multiselect(
-            f"Pilih Kelas pada '{pilih_tes_edit_kelas}' yang ingin dihapus"
-            " datanya:",
-            list_kelas_edit,
-            key="edit_kelas_multiselect",
+        df_cek_rem = pd.read_sql(
+            "SELECT * FROM remedial_siswa WHERE nis = ?",
+            conn,
+            params=(cari_nis.strip(),),
         )
-        if st.button(
-            "🗑️ Hapus Kelas Terpilih dari Ujian Ini", type="primary"
-        ):
-          if pilih_kelas_hapus_list:
-            cursor = conn.cursor()
-            for kls in pilih_kelas_hapus_list:
-              cursor.execute(
-                  "DELETE FROM hasil_ujian WHERE nama_tes = ? AND kelas = ?",
-                  (pilih_tes_edit_kelas, kls),
-              )
-            conn.commit()
-            st.success(
-                "Data kelas yang dipilih berhasil dihapus dari mata pelajaran"
-                f" '{pilih_tes_edit_kelas}'!"
-            )
-            st.rerun()
-          else:
-            st.warning("Pilih minimal satu kelas yang ingin dihapus.")
+        st.write("**Data Remedial/Susulan untuk NIS tersebut:**")
+        st.dataframe(df_cek_rem, use_container_width=True)
 
       st.markdown("---")
-      st.markdown(
-          "##### 🗑️ Hapus Peserta Remedial / Susulan Secara Spesifik (Fitur"
-          " Edit Siswa)"
-      )
-      df_mapel_rem_del = pd.read_sql(
-          "SELECT DISTINCT nama_tes FROM remedial_siswa", conn
-      )
-      if df_mapel_rem_del.empty:
-        st.info("Belum ada data remedial/susulan di dalam database.")
-      else:
-        pilih_tes_rem_edit = st.selectbox(
-            "Pilih Mata Pelajaran Remedial untuk Edit/Hapus Peserta:",
-            df_mapel_rem_del["nama_tes"].tolist(),
-            key="edit_rem_tes_sel",
-        )
-        df_rem_siswa_list = pd.read_sql(
-            "SELECT id, nis, nama, kelas FROM remedial_siswa WHERE nama_tes = ?"
-            " ORDER BY kelas, nama",
-            conn,
-            params=(pilih_tes_rem_edit,),
-        )
-
-        if df_rem_siswa_list.empty:
-          st.info(
-              "Tidak ada data peserta remedial untuk mata pelajaran ini."
-          )
-        else:
-          st.dataframe(df_rem_siswa_list, use_container_width=True)
-          pilih_id_hapus = st.multiselect(
-              "Pilih ID atau Nama Siswa yang ingin dihapus dari daftar"
-              " remedial:",
-              options=df_rem_siswa_list["id"].tolist(),
-              format_func=lambda x: f"ID {x} - "
-              + f"{df_rem_siswa_list.loc[df_rem_siswa_list['id'] == x, 'nama'].values[0]}"
-              + f" ({df_rem_siswa_list.loc[df_rem_siswa_list['id'] == x, 'kelas'].values[0]})",
-              key="multiselect_id_hapus_rem",
-          )
-          if st.button(
-              "🗑️ Hapus Siswa Terpilih dari Daftar Remedial", type="primary"
-          ):
-            if pilih_id_hapus:
-              cursor = conn.cursor()
-              for sid in pilih_id_hapus:
-                cursor.execute(
-                    "DELETE FROM remedial_siswa WHERE id = ?", (sid,)
-                )
-              conn.commit()
-              st.success(
-                  "Peserta remedial yang dipilih berhasil dihapus dari"
-                  " database!"
-              )
-              st.rerun()
-            else:
-              st.warning("Pilih minimal satu siswa yang ingin dihapus.")
-
-      st.markdown("---")
-      col_r1, col_r2, col_r3 = st.columns(3)
-      with col_r1:
-        if st.button("⚠️ Kosongkan SEMUA Hasil Ujian"):
-          cursor = conn.cursor()
-          cursor.execute("DELETE FROM hasil_ujian")
-          conn.commit()
-          st.warning("Semua data hasil ujian dikosongkan!")
-          st.rerun()
-      with col_r2:
-        if st.button("⚠️ Kosongkan SEMUA Data Master"):
-          cursor = conn.cursor()
-          cursor.execute("DELETE FROM master_siswa")
-          conn.commit()
-          st.warning("Semua data master siswa dikosongkan!")
-          st.rerun()
-      with col_r3:
-        if st.button("⚠️ Kosongkan SEMUA Data Remedial"):
-          cursor = conn.cursor()
-          cursor.execute("DELETE FROM remedial_siswa")
-          conn.commit()
-          st.warning("Semua data remedial dikosongkan!")
-          st.rerun()
+      if st.button("⚠️ Kosongkan SEMUA Hasil Ujian"):
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM hasil_ujian")
+        conn.commit()
+        st.warning("Semua data hasil ujian dikosongkan!")
+        st.rerun()
 
   # --- MENU 2: GURU PREVIEW & DOWNLOAD REKAP ---
   elif menu == "2. Guru: Download Rekap Nilai":
@@ -579,7 +419,7 @@ else:
         preview_data = {}
         cleaned_selected_tes = clean_tes_name(pilih_mapel)
 
-        # Ambil semua data hasil ujian yang cocok secara fleksibel dengan nama tes yang dipilih
+        # Ambil semua data hasil ujian dan cocokkan secara fleksibel
         df_all_ujian = pd.read_sql(
             "SELECT nis, poin, status, nama_tes FROM hasil_ujian", conn
         )
@@ -745,7 +585,6 @@ else:
           key="cek_mapel",
       )
 
-      # Ambil semua nis yang sudah ujian (fleksibel dengan nama tes)
       cleaned_cek_tes = clean_tes_name(pilih_mapel)
       df_all_ujian = pd.read_sql(
           "SELECT nis, nama_tes FROM hasil_ujian", conn
