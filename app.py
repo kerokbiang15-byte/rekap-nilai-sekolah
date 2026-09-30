@@ -205,6 +205,7 @@ else:
             cursor = conn.cursor()
             for _, row in df_u.iterrows():
               nis_val = str(row[nis_c]).strip()
+              nama_tes_val = str(row[tes_c]).strip()
               cursor.execute(
                   "SELECT kelas FROM master_siswa WHERE nis = ?", (nis_val,)
               )
@@ -215,11 +216,12 @@ else:
                   else str(row[kelas_c]).strip()
               )
 
-              # Cek apakah siswa ini sebelumnya tercatat belum ujian (masuk daftar susulan)
-              # Jika ada di tabel remedial/susulan, tandai sebagai 'susulan'
+              # Cek apakah siswa ini terdaftar di remedial/susulan (fleksibel terhadap nama tes)
               cursor.execute(
-                  "SELECT id FROM remedial_siswa WHERE nis = ? AND nama_tes = ?",
-                  (nis_val, str(row[tes_c]).strip()),
+                  "SELECT id FROM remedial_siswa WHERE nis = ? AND (nama_tes ="
+                  " ? OR ? LIKE '%' || nama_tes || '%' OR nama_tes LIKE '%' ||"
+                  " ? || '%')",
+                  (nis_val, nama_tes_val, nama_tes_val, nama_tes_val),
               )
               is_susulan = cursor.fetchone()
               status_ujian = "susulan" if is_susulan else "normal"
@@ -228,7 +230,7 @@ else:
                   "INSERT INTO hasil_ujian (nama_tes, nis, nama, kelas, poin,"
                   " status) VALUES (?, ?, ?, ?, ?, ?)",
                   (
-                      str(row[tes_c]).strip(),
+                      nama_tes_val,
                       nis_val,
                       str(row[nama_c]).strip(),
                       kelas_val,
