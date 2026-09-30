@@ -19,7 +19,7 @@ def init_db():
             kelas TEXT
         )
     """)
-  # Tabel Hasil Ujian Mentah
+  # Tabel Hasil Ujian Mentah (ditambahkan kolom status untuk menandai remedial)
   cursor.execute("""
         CREATE TABLE IF NOT EXISTS hasil_ujian (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -27,7 +27,8 @@ def init_db():
             nis TEXT,
             nama TEXT,
             kelas TEXT,
-            poin REAL
+            poin REAL,
+            status TEXT DEFAULT 'normal'
         )
     """)
   # Tabel Data Remedial Siswa
@@ -115,10 +116,11 @@ else:
   if menu == "1. Operator: Upload & Kelola Data":
     st.header("Panel Operator: Upload & Kelola Database")
 
-    tab_up1, tab_up2, tab_up3, tab_up4 = st.tabs([
+    tab_up1, tab_up2, tab_up3, tab_up4, tab_up5 = st.tabs([
         "Upload Master Siswa",
         "Upload Hasil Ujian CBT",
         "Upload Data Remedial",
+        "Upload Update Nilai Remedial",
         "Kelola / Hapus Data",
     ])
 
@@ -196,8 +198,8 @@ else:
             cursor = conn.cursor()
             for _, row in df_u.iterrows():
               cursor.execute(
-                  "INSERT INTO hasil_ujian (nama_tes, nis, nama, kelas, poin)"
-                  " VALUES (?, ?, ?, ?, ?)",
+                  "INSERT INTO hasil_ujian (nama_tes, nis, nama, kelas, poin,"
+                  " status) VALUES (?, ?, ?, ?, ?, 'normal')",
                   (
                       str(row[tes_c]),
                       str(row[nis_c]),
@@ -210,7 +212,7 @@ else:
             st.success("Data Hasil Ujian berhasil di-upload dan masuk database!")
 
     with tab_up3:
-      st.subheader("3. Upload Data Siswa Remedial")
+      st.subheader("3. Upload Data Siswa Remedial (Wali Kelas)")
       st.markdown(
           "Format kolom: `Nama Tes`, `Username` (NIS), `Nama`, `Group` (Kelas)"
       )
@@ -255,7 +257,57 @@ else:
             st.success("Data Remedial berhasil di-upload ke database!")
 
     with tab_up4:
-      st.subheader("4. Kelola & Hapus Data di Database (Multiple Choice)")
+      st.subheader("4. Upload Update Nilai Remedial (Perbarui Nilai)")
+      st.markdown(
+          "Format kolom: `Nama Tes`, `Username` (NIS), `Poin` (Nilai Remedial"
+          " Baru)"
+      )
+      file_up_rem = st.file_uploader(
+          "Pilih file Update Nilai Remedial",
+          type=["xlsx", "csv"],
+          key="up_rem_score",
+      )
+      if file_up_rem:
+        if file_up_rem.name.endswith(".csv"):
+          df_up_r = pd.read_csv(file_up_rem)
+        else:
+          df_up_r = pd.read_excel(file_up_rem)
+
+        df_up_r.columns = [str(col).strip() for col in df_up_r.columns]
+        col_map_ur = {c.lower(): c for c in df_up_r.columns}
+
+        tes_ur = col_map_ur.get("nama tes") or col_map_ur.get("namates")
+        nis_ur = col_map_ur.get("username") or col_map_ur.get("nis")
+        poin_ur = col_map_ur.get("poin") or col_map_ur.get("nilai")
+
+        if not tes_ur or not nis_ur or not poin_ur:
+          st.error(
+              f"Kolom file tidak sesuai! Kolom terbaca: {list(df_up_r.columns)}"
+          )
+        else:
+          st.write("Pratinjau Update Nilai:", df_up_r.head())
+          if st.button("Perbarui Nilai Remedial"):
+            cursor = conn.cursor()
+            updated_count = 0
+            for _, row in df_up_r.iterrows():
+              cursor.execute(
+                  """
+                                UPDATE hasil_ujian 
+                                SET poin = ?, status = 'remedial' 
+                                WHERE nis = ? AND nama_tes = ?
+                            """,
+                  (float(row[poin_ur]), str(row[nis_ur]), str(row[tes_ur])),
+              )
+              updated_count += cursor.rowcount
+            conn.commit()
+            st.success(
+                f"Berhasil memperbarui {updated_count} nilai siswa remedial!"
+                " Nilai yang diperbarui akan ditandai font hijau saat"
+                " didownload."
+            )
+
+    with tab_up5:
+      st.subheader("5. Kelola & Hapus Data di Database (Multiple Choice)")
 
       st.markdown("##### 🗑️ Hapus Data Hasil Ujian")
       df_mapel_del = pd.read_sql(
@@ -265,8 +317,7 @@ else:
         st.info("Belum ada data hasil ujian di dalam database.")
       else:
         pilih_hapus_tes_list = st.multiselect(
-            "Pilih Mata Pelajaran Ujian yang ingin dihapus (bisa lebih dari"
-            " satu):",
+            "Pilih Mata Pelajaran Ujian yang ingin dihapus:",
             df_mapel_del["nama_tes"].tolist(),
             key="del_ujian_multiselect",
         )
@@ -295,8 +346,7 @@ else:
         st.info("Belum ada data remedial di dalam database.")
       else:
         pilih_hapus_rem_list = st.multiselect(
-            "Pilih Mata Pelajaran Remedial yang ingin dihapus (bisa lebih dari"
-            " satu):",
+            "Pilih Mata Pelajaran Remedial yang ingin dihapus:",
             df_mapel_rem_del["nama_tes"].tolist(),
             key="del_remedial_multiselect",
         )
@@ -377,21 +427,33 @@ else:
               params=(kelas,),
           )
           df_n_mapel = pd.read_sql(
-              "SELECT nis, poin FROM hasil_ujian WHERE nama_tes = ?",
+              "SELECT nis, poin, status FROM hasil_ujian WHERE nama_tes = ?",
               conn,
               params=(pilih_mapel,),
           )
 
           dict_nilai = dict(
-              zip(df_n_mapel["nis"].astype(str), df_n_mapel["poin"])
+              zip(
+                  df_n_mapel["nis"].astype(str),
+                  zip(df_n_mapel["poin"], df_n_mapel["status"]),
+              )
           )
 
           rows = []
           for idx, (_, s_row) in enumerate(df_m_kelas.iterrows(), 1):
             nis_siswa = str(s_row["nis"])
             nama_siswa = s_row["nama"]
-            nilai_pg = dict_nilai.get(nis_siswa, 0.0)
-            rows.append({"NO": idx, "NAMA": nama_siswa, "NILAI PG": nilai_pg})
+            data_n = dict_nilai.get(nis_siswa, (0.0, "normal"))
+            nilai_pg = data_n[0]
+            status_n = data_n[1]
+
+            ket = "Remedial" if status_n == "remedial" else "-"
+            rows.append({
+                "NO": idx,
+                "NAMA": nama_siswa,
+                "NILAI PG": nilai_pg,
+                "KET": ket,
+            })
 
           df_preview = pd.DataFrame(rows)
           if df_preview.empty:
@@ -420,6 +482,19 @@ else:
               bottom=Side(style="thin", color="000000"),
           )
 
+          # Ambil data status dan nilai mentah untuk pengecekan font hijau di excel
+          df_n_mapel_all = pd.read_sql(
+              "SELECT nis, status FROM hasil_ujian WHERE nama_tes = ?",
+              conn,
+              params=(pilih_mapel,),
+          )
+          dict_status = dict(
+              zip(
+                  df_n_mapel_all["nis"].astype(str),
+                  df_n_mapel_all["status"],
+              )
+          )
+
           for kelas, df_prev in preview_data.items():
             safe_sheet_name = re.sub(r"[\\/?:*\[\]]", "-", str(kelas))[:31]
             ws = wb.create_sheet(title=safe_sheet_name)
@@ -442,6 +517,16 @@ else:
               cell.alignment = Alignment(horizontal="center", vertical="center")
               cell.border = thin_border
 
+            # Ambil master siswa kelas ini untuk mencocokkan NIS asli dengan statusnya
+            df_m_kls_full = pd.read_sql(
+                "SELECT nis FROM master_siswa WHERE kelas = ?",
+                conn,
+                params=(kelas,),
+            )
+            dict_nis_by_idx = dict(
+                enumerate(df_m_kls_full["nis"].astype(str), 1)
+            )
+
             for _, r_data in df_prev.iterrows():
               r_idx = int(r_data["NO"])
               row_num = 4 + r_idx
@@ -449,6 +534,17 @@ else:
               c_no = ws.cell(row=row_num, column=1, value=r_idx)
               c_nama = ws.cell(row=row_num, column=2, value=r_data["NAMA"])
               c_nilai = ws.cell(row=row_num, column=3, value=r_data["NILAI PG"])
+
+              # Cek apakah siswa ini statusnya remedial -> cetak warna hijau
+              nis_ s = dict_nis_by_idx.get(r_idx, "")
+              is_remed = dict_status.get(nis_s) == "remedial"
+
+              if is_remed:
+                c_nilai.font = Font(
+                    name="Calibri", size=11, color="008000", bold=True
+                )
+              else:
+                c_nilai.font = Font(name="Calibri", size=11)
 
               c_no.alignment = Alignment(
                   horizontal="center", vertical="center"
@@ -547,9 +643,23 @@ else:
       )
       list_kelas_rem = df_kelas_rem["kelas"].tolist()
 
-      pilih_kelas_rem = st.multiselect(
-          "Pilih Kelas untuk melihat/download daftar remedial:", list_kelas_rem
+      # Fitur Select All Kelas
+      select_all_rem = st.checkbox(
+          "Pilih Semua Kelas Remedial", key="select_all_rem_chk"
       )
+      if select_all_rem:
+        pilih_kelas_rem = st.multiselect(
+            "Pilih Kelas untuk melihat/download daftar remedial:",
+            list_kelas_rem,
+            default=list_kelas_rem,
+            key="multiselect_kelas_rem",
+        )
+      else:
+        pilih_kelas_rem = st.multiselect(
+            "Pilih Kelas untuk melihat/download daftar remedial:",
+            list_kelas_rem,
+            key="multiselect_kelas_rem",
+        )
 
       if pilih_kelas_rem:
         placeholders = ",".join(["?"] * len(pilih_kelas_rem))
@@ -573,3 +683,22 @@ else:
               " remedial."
           )
           st.dataframe(df_hasil_rem, use_container_width=True)
+
+          # Tombol Download Excel Daftar Remedial
+          output_rem = io.BytesIO()
+          with pd.ExcelWriter(output_rem, engine="openpyxl") as writer:
+            df_hasil_rem.to_excel(
+                writer, sheet_name="Peserta Remedial", index=False
+            )
+          output_rem.seek(0)
+
+          st.download_button(
+              label="📥 Download Daftar Remedial ke Excel",
+              data=output_rem,
+              file_name=(
+                  f"Daftar_Remedial_{pilih_mapel_rem.replace('/', '-')}.xlsx"
+              ),
+              mime=(
+                  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              ),
+          )
