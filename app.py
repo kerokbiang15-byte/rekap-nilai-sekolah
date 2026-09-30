@@ -316,7 +316,7 @@ else:
     with tab_up5:
       st.subheader("5. Kelola & Hapus Data di Database (Multiple Choice)")
 
-      st.markdown("##### 🗑️ Hapus Data Hasil Ujian")
+      st.markdown("##### 🗑️️ Hapus Data Hasil Ujian")
       df_mapel_del = pd.read_sql(
           "SELECT DISTINCT nama_tes FROM hasil_ujian", conn
       )
@@ -633,78 +633,77 @@ else:
     df_mapel_rem = pd.read_sql(
         "SELECT DISTINCT nama_tes FROM remedial_siswa", conn
     )
-    if df_mapel_rem.empty:
+    df_kelas_rem = pd.read_sql(
+        "SELECT DISTINCT kelas FROM remedial_siswa", conn
+    )
+
+    if df_mapel_rem.empty or df_kelas_rem.empty:
       st.warning("Belum ada data remedial yang di-upload oleh operator.")
     else:
       list_mapel_rem = df_mapel_rem["nama_tes"].tolist()
+      list_kelas_rem = df_kelas_rem["kelas"].tolist()
 
-      # Multiselect Mata Pelajaran Remedial tanpa checkbox "Pilih Semua"
+      # Multiselect Mata Pelajaran
       pilih_mapel_rem = st.multiselect(
           "Pilih Mata Pelajaran Remedial:",
           list_mapel_rem,
           key="multiselect_mapel_rem",
       )
 
-      if pilih_mapel_rem:
-        placeholders_m = ",".join(["?"] * len(pilih_mapel_rem))
-        df_kelas_rem = pd.read_sql(
-            f"""
-                SELECT DISTINCT kelas 
-                FROM remedial_siswa 
-                WHERE nama_tes IN ({placeholders_m})
-            """,
-            conn,
-            params=pilih_mapel_rem,
+      # Listdown Kelas dimunculkan langsung tanpa syarat harus pilih mapel dulu
+      select_all_kls_rem = st.checkbox(
+          "Pilih Semua Kelas Remedial", key="select_all_kls_rem_chk"
+      )
+      if select_all_kls_rem:
+        pilih_kelas_rem = st.multiselect(
+            "Pilih Kelas:",
+            list_kelas_rem,
+            default=list_kelas_rem,
+            key="multiselect_kelas_rem",
         )
-        list_kelas_rem = df_kelas_rem["kelas"].tolist()
+      else:
+        pilih_kelas_rem = st.multiselect(
+            "Pilih Kelas:", list_kelas_rem, key="multiselect_kelas_rem"
+        )
 
-        # Listdown kelas dimunculkan kembali di sini
-        select_all_kls_rem = st.checkbox(
-            "Pilih Semua Kelas Remedial", key="select_all_kls_rem_chk"
-        )
-        if select_all_kls_rem:
-          pilih_kelas_rem = st.multiselect(
-              "Pilih Kelas:",
-              list_kelas_rem,
-              default=list_kelas_rem,
-              key="multiselect_kelas_rem",
-          )
-        else:
-          pilih_kelas_rem = st.multiselect(
-              "Pilih Kelas:", list_kelas_rem, key="multiselect_kelas_rem"
-          )
+      # Tampilkan data jika salah satu atau keduanya dipilih
+      if pilih_mapel_rem or pilih_kelas_rem:
+        query_r = "SELECT nama_tes, kelas, nis, nama FROM remedial_siswa WHERE 1=1"
+        params = []
+
+        if pilih_mapel_rem:
+          placeholders_m = ",".join(["?"] * len(pilih_mapel_rem))
+          query_r += f" AND nama_tes IN ({placeholders_m})"
+          params.extend(pilih_mapel_rem)
 
         if pilih_kelas_rem:
           placeholders_k = ",".join(["?"] * len(pilih_kelas_rem))
-          query_r = f"""
-                    SELECT nama_tes, kelas, nis, nama 
-                    FROM remedial_siswa 
-                    WHERE nama_tes IN ({placeholders_m}) AND kelas IN ({placeholders_k})
-                    ORDER BY nama_tes, kelas, nama
-                """
-          params = pilih_mapel_rem + pilih_kelas_rem
-          df_hasil_rem = pd.read_sql(query_r, conn, params=params)
+          query_r += f" AND kelas IN ({placeholders_k})"
+          params.extend(pilih_kelas_rem)
 
-          if df_hasil_rem.empty:
-            st.info("Tidak ada data peserta remedial untuk filter yang dipilih.")
-          else:
-            st.warning(
-                f"Ditemukan {len(df_hasil_rem)} data siswa peserta remedial."
+        query_r += " ORDER BY nama_tes, kelas, nama"
+        df_hasil_rem = pd.read_sql(query_r, conn, params=params)
+
+        if df_hasil_rem.empty:
+          st.info("Tidak ada data peserta remedial untuk filter yang dipilih.")
+        else:
+          st.warning(
+              f"Ditemukan {len(df_hasil_rem)} data siswa peserta remedial."
+          )
+          st.dataframe(df_hasil_rem, use_container_width=True)
+
+          output_rem = io.BytesIO()
+          with pd.ExcelWriter(output_rem, engine="openpyxl") as writer:
+            df_hasil_rem.to_excel(
+                writer, sheet_name="Peserta Remedial", index=False
             )
-            st.dataframe(df_hasil_rem, use_container_width=True)
+          output_rem.seek(0)
 
-            output_rem = io.BytesIO()
-            with pd.ExcelWriter(output_rem, engine="openpyxl") as writer:
-              df_hasil_rem.to_excel(
-                  writer, sheet_name="Peserta Remedial", index=False
-              )
-            output_rem.seek(0)
-
-            st.download_button(
-                label="📥 Download Daftar Remedial ke Excel",
-                data=output_rem,
-                file_name="Daftar_Remedial_Pilihan.xlsx",
-                mime=(
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                ),
-            )
+          st.download_button(
+              label="📥 Download Daftar Remedial ke Excel",
+              data=output_rem,
+              file_name="Daftar_Remedial_Pilihan.xlsx",
+              mime=(
+                  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              ),
+          )
