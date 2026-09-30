@@ -7,7 +7,7 @@ import sqlite3
 import streamlit as st
 
 
-# --- KONEKSI DATABASE SQLITE ---
+# --- KONEKSI DATABASE SQLITE & MIGRASI OTOMATIS ---
 def init_db():
   conn = sqlite3.connect("sekolah.db", check_same_thread=False)
   cursor = conn.cursor()
@@ -19,7 +19,7 @@ def init_db():
             kelas TEXT
         )
     """)
-  # Tabel Hasil Ujian Mentah (ditambahkan kolom status untuk menandai remedial)
+  # Tabel Hasil Ujian Mentah
   cursor.execute("""
         CREATE TABLE IF NOT EXISTS hasil_ujian (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -31,6 +31,14 @@ def init_db():
             status TEXT DEFAULT 'normal'
         )
     """)
+  # Pastikan kolom status ada (migrasi otomatis jika database sudah ada sebelumnya)
+  cursor.execute("PRAGMA table_info(hasil_ujian)")
+  columns = [info[1] for info in cursor.fetchall()]
+  if "status" not in columns:
+    cursor.execute(
+        "ALTER TABLE hasil_ujian ADD COLUMN status TEXT DEFAULT 'normal'"
+    )
+
   # Tabel Data Remedial Siswa
   cursor.execute("""
         CREATE TABLE IF NOT EXISTS remedial_siswa (
@@ -338,7 +346,7 @@ else:
             st.warning("Pilih minimal satu mata pelajaran ujian.")
 
       st.markdown("---")
-      st.markdown("##### 🗑️ Hapus Data Remedial")
+      st.markdown("##### 🗑️️ Hapus Data Remedial")
       df_mapel_rem_del = pd.read_sql(
           "SELECT DISTINCT nama_tes FROM remedial_siswa", conn
       )
