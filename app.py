@@ -43,7 +43,7 @@ def init_db():
         )
     """)
 
-  # Tabel Hasil Ujian Mentah (Pastikan struktur bersih)
+  # Tabel Hasil Ujian Mentah
   cursor.execute("""
         CREATE TABLE IF NOT EXISTS hasil_ujian (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -144,7 +144,7 @@ else:
         "Upload Master Siswa",
         "Upload Hasil Ujian CBT",
         "Upload Data Remedial",
-        "Upload Update Nilai Remedial",
+        "Update Nilai & Selesaikan Remedial",
         "Kelola / Hapus Data",
     ])
 
@@ -243,7 +243,6 @@ else:
               if "Utama" in jenis_upload:
                 status_ujian = "normal"
               else:
-                # Cek apakah siswa terdaftar di remedial untuk mapel ini
                 cursor.execute(
                     "SELECT nama_tes FROM remedial_siswa WHERE nis = ?",
                     (nis_val,),
@@ -265,7 +264,6 @@ else:
                 else:
                   status_ujian = "susulan"
 
-              # INSERT OR REPLACE berbasis (nis, nama_tes) agar mapel lain aman
               cursor.execute(
                   """
                                 INSERT OR REPLACE INTO hasil_ujian (nama_tes, nis, nama, kelas, poin, status)
@@ -340,12 +338,15 @@ else:
             st.success("Data Remedial berhasil disimpan!")
 
     with tab_up4:
-      st.subheader("4. Upload Update Nilai Remedial")
+      st.subheader("4. Update Nilai & Selesaikan Remedial")
       st.markdown(
-          "Format Kolom: `Nama Tes`, `Username` (NIS), `Poin` (atau `nilai`)"
+          "Upload file hasil nilai remedial/susulan. Sistem akan otomatis"
+          " memperbarui nilai di rekap, mengubah status menjadi 'remedial',"
+          " serta **membersihkan nama siswa** dari daftar antrean remedial &"
+          " siswa belum ujian."
       )
       file_up_rem = st.file_uploader(
-          "Pilih file Update Nilai Remedial",
+          "Pilih file Update Nilai Remedial / Susulan",
           type=["xlsx", "csv"],
           key="up_rem_score",
       )
@@ -366,7 +367,9 @@ else:
           st.dataframe(
               df_up_r.head(), hide_index=True, use_container_width=True
           )
-          if st.button("Perbarui Nilai Remedial"):
+          if st.button(
+              "🚀 Proses Update & Bersihkan Daftar Siswa Belum Ujian"
+          ):
             cursor = conn.cursor()
             updated_count = 0
             for _, row in df_up_r.iterrows():
@@ -375,7 +378,17 @@ else:
               tes_val = str(row[tes_ur]).strip()
               clean_up_tes = clean_tes_name(tes_val)
 
-              # Cari record yang sesuai berdasarkan nis dan kemiripan nama tes
+              cursor.execute(
+                  "SELECT nama, kelas FROM master_siswa WHERE nis = ?",
+                  (nis_val,),
+              )
+              res_m = cursor.fetchone()
+              if res_m:
+                nama_val, kelas_val = res_m[0], res_m[1]
+              else:
+                nama_val = str(row.get("Nama", "Siswa"))
+                kelas_val = "-"
+
               cursor.execute(
                   "SELECT id, nama_tes FROM hasil_ujian WHERE nis = ?",
                   (nis_val,),
@@ -387,20 +400,34 @@ else:
                   target_tes = h_tes
                   break
 
+              # 1. Update/Replace ke hasil_ujian dengan status remedial
               cursor.execute(
                   """
-                                UPDATE hasil_ujian 
-                                SET poin = ?, status = 'remedial' 
-                                WHERE nis = ? AND nama_tes = ?
+                                INSERT OR REPLACE INTO hasil_ujian (nama_tes, nis, nama, kelas, poin, status)
+                                VALUES (?, ?, ?, ?, ?, 'remedial')
                             """,
-                  (poin_val, nis_val, target_tes),
+                  (target_tes, nis_val, nama_val, kelas_val, poin_val),
               )
               updated_count += cursor.rowcount
+
+              # 2. Hapus dari remedial_siswa agar daftar remedial bersih
+              cursor.execute(
+                  "DELETE FROM remedial_siswa WHERE nis = ? AND"
+                  " (nama_tes = ? OR ? LIKE '%' || nama_tes || '%')",
+                  (nis_val, tes_val, tes_val),
+              )
+
             conn.commit()
             st.success(
-                f"Berhasil memperbarui {updated_count} nilai siswa remedial"
-                " menjadi 'Sudah Remedial'!"
+                f"Berhasil memperbarui {updated_count} nilai siswa! Data telah"
+                " diperbarui dan nama siswa telah dibersihkan dari daftar"
+                " belum ujian."
             )
+        else:
+          st.error(
+              "Kolom file tidak sesuai! Pastikan terdapat kolom: `Nama Tes`,"
+              " `Username` (atau `NIS`), dan `Poin` (atau `Nilai`)."
+          )
 
     with tab_up5:
       st.subheader("5. Kelola & Hapus Data di Database")
