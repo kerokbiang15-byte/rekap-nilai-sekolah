@@ -150,9 +150,6 @@ else:
 
     with tab_up1:
       st.subheader("1. Upload Data Master Siswa (Excel/CSV)")
-      st.markdown(
-          "Format Kolom: `nis`, `nama`, `kelas` (atau `group`, `no induk`)"
-      )
       file_master = st.file_uploader(
           "Pilih file Master Siswa", type=["xlsx", "csv"], key="master"
       )
@@ -176,11 +173,16 @@ else:
           if st.button("Simpan Master Siswa ke Database"):
             cursor = conn.cursor()
             for _, row in df_m.iterrows():
+              nis_clean = (
+                  str(int(row[nis_col]))
+                  if isinstance(row[nis_col], float)
+                  else str(row[nis_col]).strip()
+              )
               cursor.execute(
                   "INSERT OR REPLACE INTO master_siswa (nis, nama, kelas)"
                   " VALUES (?, ?, ?)",
                   (
-                      str(row[nis_col]).strip(),
+                      nis_clean,
                       str(row[nama_col]).strip(),
                       str(row[kelas_col]).strip(),
                   ),
@@ -190,10 +192,6 @@ else:
 
     with tab_up2:
       st.subheader("2. Upload Hasil Ujian CBT (Utama / Susulan)")
-      st.markdown(
-          "Format Kolom: `Nama Tes`, `Username` (NIS), `Nama`, `Group`"
-          " (Kelas), `Poin`"
-      )
       jenis_upload = st.radio(
           "Pilih Jenis Upload File Ujian:",
           [
@@ -214,7 +212,11 @@ else:
         df_u.columns = [str(col).strip() for col in df_u.columns]
         col_map_u = {c.lower(): c for c in df_u.columns}
         tes_c = col_map_u.get("nama tes") or col_map_u.get("namates")
-        nis_c = col_map_u.get("username") or col_map_u.get("nis")
+        nis_c = (
+            col_map_u.get("username")
+            or col_map_u.get("nis")
+            or col_map_u.get("no induk")
+        )
         nama_c = col_map_u.get("nama")
         kelas_c = col_map_u.get("group") or col_map_u.get("kelas")
         poin_c = col_map_u.get("poin") or col_map_u.get("nilai")
@@ -227,7 +229,11 @@ else:
           if st.button("Simpan Hasil Ujian ke Database"):
             cursor = conn.cursor()
             for _, row in df_u.iterrows():
-              nis_val = str(row[nis_c]).strip()
+              nis_val = (
+                  str(int(row[nis_c]))
+                  if isinstance(row[nis_c], float)
+                  else str(row[nis_c]).strip()
+              )
               nama_tes_val = str(row[tes_c]).strip()
               clean_upload_tes = clean_tes_name(nama_tes_val)
               poin_val = parse_poin(row[poin_c])
@@ -283,9 +289,6 @@ else:
 
     with tab_up3:
       st.subheader("3. Upload Data Siswa Remedial dari Guru")
-      st.markdown(
-          "Format Kolom: `Nama Tes`, `Username` (NIS), `Nama`, `Group` (Kelas)"
-      )
       file_rem = st.file_uploader(
           "Pilih file Data Remedial", type=["xlsx", "csv"], key="remedial_file"
       )
@@ -298,7 +301,11 @@ else:
         df_r.columns = [str(col).strip() for col in df_r.columns]
         col_map_r = {c.lower(): c for c in df_r.columns}
         tes_rc = col_map_r.get("nama tes") or col_map_r.get("namates")
-        nis_rc = col_map_r.get("username") or col_map_r.get("nis")
+        nis_rc = (
+            col_map_r.get("username")
+            or col_map_r.get("nis")
+            or col_map_r.get("no induk")
+        )
         nama_rc = col_map_r.get("nama")
         kelas_rc = col_map_r.get("group") or col_map_r.get("kelas")
 
@@ -310,8 +317,13 @@ else:
           if st.button("Simpan Data Remedial ke Database"):
             cursor = conn.cursor()
             for _, row in df_r.iterrows():
-              nis_val = str(row[nis_rc]).strip()
+              nis_val = (
+                  str(int(row[nis_rc]))
+                  if isinstance(row[nis_rc], float)
+                  else str(row[nis_rc]).strip()
+              )
               tes_val = str(row[tes_rc]).strip()
+
               cursor.execute(
                   "SELECT kelas, nama FROM master_siswa WHERE nis = ?",
                   (nis_val,),
@@ -339,12 +351,6 @@ else:
 
     with tab_up4:
       st.subheader("4. Update Nilai & Selesaikan Remedial")
-      st.markdown(
-          "Upload file hasil nilai remedial/susulan. Sistem akan otomatis"
-          " memperbarui nilai di rekap, mengubah status menjadi 'remedial',"
-          " serta **membersihkan nama siswa** dari daftar antrean remedial &"
-          " siswa belum ujian."
-      )
       file_up_rem = st.file_uploader(
           "Pilih file Update Nilai Remedial / Susulan",
           type=["xlsx", "csv"],
@@ -359,7 +365,11 @@ else:
         df_up_r.columns = [str(col).strip() for col in df_up_r.columns]
         col_map_ur = {c.lower(): c for c in df_up_r.columns}
         tes_ur = col_map_ur.get("nama tes") or col_map_ur.get("namates")
-        nis_ur = col_map_ur.get("username") or col_map_ur.get("nis")
+        nis_ur = (
+            col_map_ur.get("username")
+            or col_map_ur.get("nis")
+            or col_map_ur.get("no induk")
+        )
         poin_ur = col_map_ur.get("poin") or col_map_ur.get("nilai")
 
         if tes_ur and nis_ur and poin_ur:
@@ -367,14 +377,16 @@ else:
           st.dataframe(
               df_up_r.head(), hide_index=True, use_container_width=True
           )
-          if st.button(
-              "🚀 Proses Update & Bersihkan Daftar Siswa Belum Ujian"
-          ):
+          if st.button("🚀 Proses Update & Bersihkan Daftar Remedial"):
             cursor = conn.cursor()
             updated_count = 0
             for _, row in df_up_r.iterrows():
               poin_val = parse_poin(row[poin_ur])
-              nis_val = str(row[nis_ur]).strip()
+              nis_val = (
+                  str(int(row[nis_ur]))
+                  if isinstance(row[nis_ur], float)
+                  else str(row[nis_ur]).strip()
+              )
               tes_val = str(row[tes_ur]).strip()
               clean_up_tes = clean_tes_name(tes_val)
 
@@ -410,24 +422,11 @@ else:
               )
               updated_count += cursor.rowcount
 
-              # 2. Hapus dari remedial_siswa agar daftar remedial bersih
-              cursor.execute(
-                  "DELETE FROM remedial_siswa WHERE nis = ? AND"
-                  " (nama_tes = ? OR ? LIKE '%' || nama_tes || '%')",
-                  (nis_val, tes_val, tes_val),
-              )
-
             conn.commit()
             st.success(
-                f"Berhasil memperbarui {updated_count} nilai siswa! Data telah"
-                " diperbarui dan nama siswa telah dibersihkan dari daftar"
-                " belum ujian."
+                f"Berhasil memperbarui {updated_count} nilai siswa! Siswa yang"
+                " sudah ujian otomatis bersih dari daftar remedial."
             )
-        else:
-          st.error(
-              "Kolom file tidak sesuai! Pastikan terdapat kolom: `Nama Tes`,"
-              " `Username` (atau `NIS`), dan `Poin` (atau `Nilai`)."
-          )
 
     with tab_up5:
       st.subheader("5. Kelola & Hapus Data di Database")
@@ -465,14 +464,14 @@ else:
           st.warning("Semua data hasil ujian dikosongkan!")
           st.rerun()
       with col_r2:
-        if st.button("⚠️ Kosongkan SEMUA Data Master"):
+        if st.button("⚠️️ Kosongkan SEMUA Data Master"):
           cursor = conn.cursor()
           cursor.execute("DELETE FROM master_siswa")
           conn.commit()
           st.warning("Semua data master dikosongkan!")
           st.rerun()
       with col_r3:
-        if st.button("⚠️ Kosongkan SEMUA Data Remedial"):
+        if st.button("⚠️️ Kosongkan SEMUA Data Remedial"):
           cursor = conn.cursor()
           cursor.execute("DELETE FROM remedial_siswa")
           conn.commit()
@@ -759,7 +758,7 @@ else:
               ),
           )
 
-  # --- MENU 4: CEK & DOWNLOAD PESERTA REMEDIAL ---
+  # --- MENU 4: CEK & DOWNLOAD PESERTA REMEDIAL (DENGAN AUTO-SYNC FILTER) ---
   elif menu == "4. Cek & Download Peserta Remedial":
     st.header("Pelacak & Rekap Peserta Didik Remedial")
 
@@ -804,6 +803,7 @@ else:
       )
 
       if pilih_mapel_rem or pilih_kelas_rem:
+        # Ambil semua data remedial dan data hasil ujian yang sudah masuk
         query_r = "SELECT nama_tes, kelas, nis, nama FROM remedial_siswa WHERE 1=1"
         params = []
 
@@ -820,19 +820,51 @@ else:
         query_r += " ORDER BY nama_tes, kelas, nama"
         df_hasil_rem = pd.read_sql(query_r, conn, params=params)
 
-        if df_hasil_rem.empty:
-          st.info("Tidak ada data peserta remedial untuk filter yang dipilih.")
+        # --- AUTO-SYNC FILTER: Sembunyikan siswa yang sudah ada nilainya di hasil_ujian ---
+        df_all_ujian = pd.read_sql(
+            "SELECT nis, nama_tes FROM hasil_ujian", conn
+        )
+        completed_set = set()
+        for _, h in df_all_ujian.iterrows():
+          completed_set.add(
+              (str(h["nis"]).strip(), clean_tes_name(h["nama_tes"]))
+          )
+
+        filtered_rows = []
+        for _, r in df_hasil_rem.iterrows():
+          r_nis = str(r["nis"]).strip()
+          r_tes_clean = clean_tes_name(r["nama_tes"])
+          is_done = False
+          for done_nis, done_tes in completed_set:
+            if done_nis == r_nis and (
+                done_tes == r_tes_clean
+                or done_tes in r_tes_clean
+                or r_tes_clean in done_tes
+            ):
+              is_done = True
+              break
+          if not is_done:
+            filtered_rows.append(r)
+
+        df_final_rem = pd.DataFrame(filtered_rows)
+
+        if df_final_rem.empty:
+          st.info(
+              "Hebat! Semua siswa pada filter ini sudah menyelesaikan ujian"
+              " remedial/susulan."
+          )
         else:
           st.warning(
-              f"Ditemukan {len(df_hasil_rem)} data siswa peserta remedial."
+              f"Ditemukan {len(df_final_rem)} siswa yang masih berstatus"
+              " remedial/susulan."
           )
           st.dataframe(
-              df_hasil_rem, hide_index=True, use_container_width=True
+              df_final_rem, hide_index=True, use_container_width=True
           )
 
           output_rem = io.BytesIO()
           with pd.ExcelWriter(output_rem, engine="openpyxl") as writer:
-            df_hasil_rem.to_excel(
+            df_final_rem.to_excel(
                 writer, sheet_name="Peserta Remedial", index=False
             )
           output_rem.seek(0)
