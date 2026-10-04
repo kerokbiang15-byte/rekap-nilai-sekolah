@@ -291,7 +291,7 @@ else:
                     break
 
                 if is_remedial:
-                  status_ujian = "remedial"
+                  status_ujian = "sudah_remedial"
                 else:
                   status_ujian = "susulan"
 
@@ -315,9 +315,8 @@ else:
     with tab_up3:
       st.subheader("3. Upload Data Siswa Remedial dari Guru")
       st.markdown(
-          "Upload data remedial dari guru mapel. Nilai siswa yang masuk daftar"
-          " ini akan otomatis di-reset menjadi `0` (status remedial) agar"
-          " wali kelas dan siswa tahu bahwa mereka harus mengikuti remedial."
+          "Upload data remedial dari guru mapel. Nilai siswa akan di-reset"
+          " menjadi `0` dengan status **'Remedial'** (belum ujian remedial)."
       )
       file_rem = st.file_uploader(
           "Pilih file Data Remedial", type=["xlsx", "csv"], key="remedial_file"
@@ -344,7 +343,9 @@ else:
           st.dataframe(
               df_r.head(), hide_index=True, use_container_width=True
           )
-          if st.button("Simpan Data Remedial & Reset Nilai ke 0 (Remedial)"):
+          if st.button(
+              "Simpan Data Remedial & Set Status Menjadi 'Remedial'"
+          ):
             cursor = conn.cursor()
             count_saved = 0
             for _, row in df_r.iterrows():
@@ -367,7 +368,6 @@ else:
                   else "-"
               )
 
-              # Auto-Fill NIS & Kelas dari Master jika kosong/nan
               cursor.execute(
                   "SELECT nis, kelas FROM master_siswa WHERE LOWER(nama) ="
                   " LOWER(?)",
@@ -383,7 +383,7 @@ else:
               if not nis_val or nis_val.lower() == "nan":
                 nis_val = "UNKNOWN_" + nama_val
 
-              # 1. Simpan ke remedial_siswa
+              # 1. Simpan ke tabel remedial_siswa
               cursor.execute(
                   """
                                 INSERT OR REPLACE INTO remedial_siswa (nama_tes, nis, nama, kelas)
@@ -392,7 +392,6 @@ else:
                   (tes_val, nis_val, nama_val, kelas_val),
               )
 
-              # 2. Cari test name yang tepat di hasil_ujian jika ada
               cursor.execute(
                   "SELECT id, nama_tes FROM hasil_ujian WHERE nis = ?",
                   (nis_val,),
@@ -404,7 +403,7 @@ else:
                   target_tes = h_tes
                   break
 
-              # 3. Replace nilai di hasil_ujian menjadi 0 dengan status 'remedial'
+              # 2. Set nilai ke 0 dengan status 'remedial' (muncul sebagai "Remedial")
               cursor.execute(
                   """
                                 INSERT OR REPLACE INTO hasil_ujian (nama_tes, nis, nama, kelas, poin, status)
@@ -416,12 +415,17 @@ else:
 
             conn.commit()
             st.success(
-                f"Berhasil menyimpan {count_saved} data remedial. Nilai siswa"
-                " tersebut telah di-reset menjadi 0 (status remedial)."
+                f"Berhasil menyimpan {count_saved} data remedial. Status"
+                " diset menjadi 'Remedial'."
             )
 
     with tab_up4:
       st.subheader("4. Update Nilai & Selesaikan Remedial")
+      st.markdown(
+          "Upload file nilai setelah siswa mengikuti ujian remedial/susulan."
+          " Status akan otomatis berubah menjadi **'Sudah Remedial'** dengan"
+          " warna hijau."
+      )
       file_up_rem = st.file_uploader(
           "Pilih file Update Nilai Remedial / Susulan",
           type=["xlsx", "csv"],
@@ -449,7 +453,7 @@ else:
           st.dataframe(
               df_up_r.head(), hide_index=True, use_container_width=True
           )
-          if st.button("🚀 Proses Update Nilai Remedial"):
+          if st.button("🚀 Proses Update & Ubah Menjadi 'Sudah Remedial'"):
             cursor = conn.cursor()
             updated_count = 0
             for _, row in df_up_r.iterrows():
@@ -497,11 +501,11 @@ else:
               else:
                 kelas_val = "-"
 
-              # Update ke hasil_ujian dengan status remedial
+              # Update ke hasil_ujian dengan status 'sudah_remedial'
               cursor.execute(
                   """
                                 INSERT OR REPLACE INTO hasil_ujian (nama_tes, nis, nama, kelas, poin, status)
-                                VALUES (?, ?, ?, ?, ?, 'remedial')
+                                VALUES (?, ?, ?, ?, ?, 'sudah_remedial')
                             """,
                   (tes_val, nis_val, nama_val, kelas_val, poin_val),
               )
@@ -509,7 +513,8 @@ else:
 
             conn.commit()
             st.success(
-                f"Berhasil memperbarui {updated_count} nilai siswa remedial!"
+                f"Berhasil memperbarui {updated_count} nilai siswa menjadi"
+                " 'Sudah Remedial'!"
             )
 
     with tab_up5:
@@ -525,7 +530,7 @@ else:
             df_mapel_del["nama_tes"].tolist(),
             key="del_ujian_multiselect",
         )
-        if st.button("🗑️ Hapus Data Ujian yang Dipilih", type="primary"):
+        if st.button("🗑️️ Hapus Data Ujian yang Dipilih", type="primary"):
           if pilih_hapus_tes_list:
             cursor = conn.cursor()
             for tes in pilih_hapus_tes_list:
@@ -626,8 +631,10 @@ else:
             nilai_pg = data_n[0]
             status_n = data_n[1]
 
-            if status_n == "remedial":
+            if status_n == "sudah_remedial":
               ket = "Sudah Remedial"
+            elif status_n == "remedial":
+              ket = "Remedial"
             elif status_n == "susulan":
               ket = "Sudah Susulan"
             else:
@@ -713,7 +720,7 @@ else:
               )
               status_s = data_s[1]
 
-              if status_s == "remedial":
+              if status_s == "sudah_remedial":
                 c_nilai.font = Font(
                     name="Calibri", size=11, color="008000", bold=True
                 )
@@ -848,7 +855,7 @@ else:
               ),
           )
 
-  # --- MENU 4: CEK & DOWNLOAD PESERTA REMEDIAL (AUTO-SYNC FILTER) ---
+  # --- MENU 4: CEK & DOWNLOAD PESERTA REMEDIAL ---
   elif menu == "4. Cek & Download Peserta Remedial":
     st.header("Pelacak & Rekap Peserta Didik Remedial")
 
@@ -909,17 +916,19 @@ else:
         query_r += " ORDER BY nama_tes, kelas, nama"
         df_hasil_rem = pd.read_sql(query_r, conn, params=params)
 
-        # --- SMART SYNC: Ambil daftar siswa yang sudah ujian di hasil_ujian ---
+        # Sembunyikan siswa yang statusnya sudah 'sudah_remedial'
         df_all_ujian = pd.read_sql(
-            "SELECT nis, nama, nama_tes FROM hasil_ujian", conn
+            "SELECT nis, nama, nama_tes, status FROM hasil_ujian", conn
         )
         completed_set = set()
         for _, h in df_all_ujian.iterrows():
-          c_nis = str(h["nis"]).strip()
-          c_name = clean_name(h["nama"])
-          c_tes = clean_tes_name(h["nama_tes"])
-          completed_set.add((c_nis, c_tes))
-          completed_set.add((c_name, c_tes))
+          if h["status"] == "sudah_remedial":
+            completed_set.add(
+                (str(h["nis"]).strip(), clean_tes_name(h["nama_tes"]))
+            )
+            completed_set.add(
+                (clean_name(h["nama"]), clean_tes_name(h["nama_tes"]))
+            )
 
         filtered_rows = []
         for _, r in df_hasil_rem.iterrows():
@@ -951,7 +960,7 @@ else:
         else:
           st.warning(
               f"Ditemukan {len(df_final_rem)} siswa yang masih berstatus"
-              " remedial/susulan."
+              " remedial."
           )
           st.dataframe(
               df_final_rem, hide_index=True, use_container_width=True
